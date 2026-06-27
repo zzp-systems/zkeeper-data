@@ -1,1107 +1,1122 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Z-Keeper – Family Budget</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Z-Keeper – Family Budget</title>
 
-    <!-- ===== Libraries (CDN) ===== -->
-    <!-- Dexie for IndexedDB -->
-    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
-    <!-- html5-qrcode for scanning -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <!-- Chart.js for visualisation -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-    <style>
-        /* ===== Reset & Base ===== */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            background: #f5f7fb;
-            color: #1e293b;
-            padding-bottom: 80px;
-        }
-        .container { max-width: 500px; margin: 0 auto; padding: 16px; }
-
-        /* ===== Header ===== */
-        .app-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 2px solid #e2e8f0;
-            margin-bottom: 20px;
-        }
-        .app-header h1 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #0f172a;
-            letter-spacing: -0.5px;
-        }
-        .app-header h1 span { color: #3b82f6; }
-        .sync-status {
-            font-size: 0.8rem;
-            background: #e2e8f0;
-            padding: 4px 12px;
-            border-radius: 20px;
-        }
-
-        /* ===== Tabs ===== */
-        .tabs {
-            display: flex;
-            gap: 4px;
-            background: #e2e8f0;
-            border-radius: 16px;
-            padding: 4px;
-            margin-bottom: 24px;
-        }
-        .tab-btn {
-            flex: 1;
-            border: none;
-            background: transparent;
-            padding: 10px 0;
-            border-radius: 12px;
-            font-weight: 600;
-            color: #475569;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-        .tab-btn.active {
-            background: #ffffff;
-            color: #0f172a;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-
-        /* ===== Panels ===== */
-        .panel { display: none; }
-        .panel.active { display: block; }
-
-        /* ===== Cards ===== */
-        .card {
-            background: #ffffff;
-            border-radius: 16px;
-            padding: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-            margin-bottom: 20px;
-        }
-        .card-title {
-            font-weight: 600;
-            font-size: 1.1rem;
-            margin-bottom: 12px;
-            color: #0f172a;
-        }
-        .row {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .row > * { flex: 1; min-width: 100px; }
-
-        /* ===== Forms ===== */
-        label { display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; color: #475569; }
-        input, select, button {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            font-size: 1rem;
-            background: #f8fafc;
-            transition: 0.2s;
-        }
-        input:focus, select:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-        }
-        .btn {
-            background: #3b82f6;
-            color: white;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-        }
-        .btn:hover { background: #2563eb; }
-        .btn-secondary { background: #e2e8f0; color: #1e293b; }
-        .btn-success { background: #22c55e; color: white; }
-        .btn-success:hover { background: #16a34a; }
-        .btn-danger { background: #ef4444; }
-
-        /* ===== Scanner ===== */
-        #reader {
-            width: 100%;
-            border-radius: 12px;
-            overflow: hidden;
-            background: #000;
-            min-height: 300px;
-        }
-        #reader video { width: 100%; }
-
-        /* ===== Entries ===== */
-        .entry-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #f1f5f9;
-        }
-        .entry-item .info { flex: 1; }
-        .entry-item .name { font-weight: 500; }
-        .entry-item .meta { font-size: 0.8rem; color: #94a3b8; }
-        .entry-item .price { font-weight: 700; color: #0f172a; }
-        .entry-item .delete-btn {
-            background: none;
-            border: none;
-            color: #ef4444;
-            font-size: 1.2rem;
-            cursor: pointer;
-        }
-
-        .summary-box {
-            background: #f1f5f9;
-            border-radius: 12px;
-            padding: 12px;
-            text-align: center;
-        }
-        .summary-box .amount {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #0f172a;
-        }
-        .summary-box .label { font-size: 0.9rem; color: #64748b; }
-
-        /* ===== Scan Confirmation Modal ===== */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-        .modal-overlay.active {
-            display: flex;
-        }
-        .modal-box {
-            background: white;
-            border-radius: 20px;
-            padding: 24px;
-            max-width: 450px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            animation: modalSlideIn 0.3s ease;
-        }
-        @keyframes modalSlideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        .modal-box .modal-title {
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .modal-box .modal-title .badge {
-            background: #3b82f6;
-            color: white;
-            font-size: 0.7rem;
-            padding: 2px 10px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-        .modal-box .scanned-data {
-            background: #f1f5f9;
-            padding: 12px;
-            border-radius: 12px;
-            margin-bottom: 16px;
-            font-family: 'Courier New', monospace;
-            word-break: break-all;
-            font-size: 0.85rem;
-            color: #1e293b;
-        }
-        .modal-box .scanned-data .label {
-            font-size: 0.7rem;
-            color: #64748b;
-            font-family: 'Segoe UI', sans-serif;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .modal-box .form-group {
-            margin-bottom: 14px;
-        }
-        .modal-box .form-group label {
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-bottom: 4px;
-            display: block;
-        }
-        .modal-box .form-group input,
-        .modal-box .form-group select {
-            padding: 10px 12px;
-            font-size: 0.95rem;
-        }
-        .modal-box .modal-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 18px;
-        }
-        .modal-box .modal-actions button {
-            flex: 1;
-            padding: 12px;
-            font-size: 0.95rem;
-        }
-        .modal-box .modal-actions .btn-cancel {
-            background: #e2e8f0;
-            color: #1e293b;
-        }
-        .modal-box .modal-actions .btn-cancel:hover {
-            background: #cbd5e1;
-        }
-
-        /* ===== Utilities ===== */
-        .mt-12 { margin-top: 12px; }
-        .mb-12 { margin-bottom: 12px; }
-        .flex { display: flex; gap: 8px; align-items: center; }
-        .flex .btn { flex: 1; }
-        .hidden { display: none; }
-        .text-center { text-align: center; }
-        .text-muted { color: #94a3b8; }
-        .text-sm { font-size: 0.85rem; }
-    </style>
+  <style>
+    /* ===== Reset & Base ===== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f5f7fb; color: #1e293b; padding-bottom: 80px; }
+    .container { max-width: 500px; margin: 0 auto; padding: 16px; }
+    /* ===== Header ===== */
+    .app-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
+    .app-header h1 { font-size: 1.8rem; font-weight: 700; color: #0f172a; letter-spacing: -0.5px; }
+    .app-header h1 span { color: #3b82f6; }
+    .sync-status { font-size: 0.8rem; background: #e2e8f0; padding: 4px 12px; border-radius: 20px; }
+    /* ===== Tabs ===== */
+    .tabs { display: flex; gap: 4px; background: #e2e8f0; border-radius: 16px; padding: 4px; margin-bottom: 24px; }
+    .tab-btn { flex: 1; border: none; background: transparent; padding: 10px 0; border-radius: 12px; font-weight: 600; color: #475569; cursor: pointer; transition: 0.2s; }
+    .tab-btn.active { background: #ffffff; color: #0f172a; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    /* ===== Panels ===== */
+    .panel { display: none; }
+    .panel.active { display: block; }
+    /* ===== Cards ===== */
+    .card { background: #ffffff; border-radius: 16px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); margin-bottom: 20px; }
+    .card-title { font-weight: 600; font-size: 1.1rem; margin-bottom: 12px; color: #0f172a; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 100px; }
+    /* ===== Forms ===== */
+    label { display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; color: #475569; }
+    input, select, button { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 1rem; background: #f8fafc; transition: 0.2s; }
+    input:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.2); }
+    .btn { background: #3b82f6; color: white; font-weight: 600; border: none; cursor: pointer; }
+    .btn:hover { background: #2563eb; }
+    .btn-secondary { background: #e2e8f0; color: #1e293b; }
+    .btn-danger { background: #ef4444; }
+    /* ===== Scanner ===== */
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 300px; }
+    #reader video { width: 100%; }
+    /* ===== Entries ===== */
+    .entry-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+    .entry-item .info { flex: 1; }
+    .entry-item .name { font-weight: 500; }
+    .entry-item .meta { font-size: 0.8rem; color: #94a3b8; }
+    .entry-item .price { font-weight: 700; color: #0f172a; }
+    .entry-item .delete-btn { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; }
+    .summary-box { background: #f1f5f9; border-radius: 12px; padding: 12px; text-align: center; }
+    .summary-box .amount { font-size: 2rem; font-weight: 700; color: #0f172a; }
+    .summary-box .label { font-size: 0.9rem; color: #64748b; }
+    /* ===== Utilities ===== */
+    .mt-12 { margin-top: 12px; }
+    .mb-12 { margin-bottom: 12px; }
+    .flex { display: flex; gap: 8px; align-items: center; }
+    .flex .btn { flex: 1; }
+    .hidden { display: none; }
+    .text-center { text-align: center; }
+  </style>
 </head>
 <body>
 
-<div class="container" id="app">
-
-    <!-- ===== HEADER ===== -->
+  <div class="container" id="app">
     <div class="app-header">
-        <h1>Z<span>‑</span>Keeper</h1>
-        <span class="sync-status" id="syncStatus">● offline</span>
+      <h1>Z<span>‑</span>Keeper</h1>
+      <span class="sync-status" id="syncStatus">● offline</span>
     </div>
 
-    <!-- ===== TABS ===== -->
     <div class="tabs">
-        <button class="tab-btn active" data-tab="scan">📷 Scan</button>
-        <button class="tab-btn" data-tab="manual">✍️ Manual</button>
-        <button class="tab-btn" data-tab="ledger">📋 Ledger</button>
-        <button class="tab-btn" data-tab="reports">📊 Reports</button>
-        <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+      <button class="tab-btn active" data-tab="scan">📷 Scan</button>
+      <button class="tab-btn" data-tab="manual">✍️ Manual</button>
+      <button class="tab-btn" data-tab="ledger">📋 Ledger</button>
+      <button class="tab-btn" data-tab="reports">📊 Reports</button>
+      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- PANEL: SCAN -->
-    <!-- ========================================================== -->
     <div id="panel-scan" class="panel active">
-        <div class="card">
-            <div class="card-title">📷 Scan Barcode / QR</div>
-            <div id="reader"></div>
-            <div class="flex mt-12">
-                <button class="btn btn-secondary" id="startScanner">▶ Start Camera</button>
-                <button class="btn btn-secondary" id="stopScanner">⏹ Stop</button>
+      <div class="card">
+        <div class="card-title">📷 Scan Barcode / QR</div>
+        <div id="reader"></div>
+        <div class="flex mt-12">
+          <button class="btn btn-secondary" id="startScanner">▶ Start Camera</button>
+          <button class="btn btn-secondary" id="stopScanner">⏹ Stop</button>
+        </div>
+        <p class="text-center mt-12" style="font-size:0.9rem;color:#64748b;">
+          Scan any QR or 2D barcode. Decoded text will be used as product name.
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📸 Scan from Image</div>
+        <input type="file" id="imageUpload" accept="image/*" />
+        <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
+        
+        <button class="btn btn-secondary mt-12" id="scanReceiptBtn">🧾 Scan Receipt (OCR)</button>
+        <div id="receiptProgress" style="display:none; margin-top:12px;">
+            <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
+                <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
             </div>
-            <p class="text-center mt-12" style="font-size:0.9rem;color:#64748b;">
-                Scan any QR or 2D barcode. A confirmation dialog will appear with the scanned data.
-            </p>
+            <p id="ocrStatus" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
+        </div>
+      </div>
+
+      <div id="quickAddPanel" class="card hidden">
+        <div class="card-title">Add scanned item</div>
+        <label>Product name</label>
+        <input type="text" id="quickName" placeholder="e.g. Milk" />
+        <label>Price (₱)</label>
+        <input type="number" id="quickPrice" placeholder="0.00" step="0.01" />
+        <label>Category</label>
+        <select id="quickCategory">
+          <option value="Groceries">Groceries</option>
+          <option value="Vegetables">Vegetables</option>
+          <option value="Meat">Meat</option>
+          <option value="Dairy">Dairy</option>
+          <option value="Snacks">Snacks</option>
+          <option value="Beverages">Beverages</option>
+          <option value="Household">Household</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Other">Other</option>
+        </select>
+        <button class="btn mt-12" id="quickSaveBtn">💾 Save Entry</button>
+      </div>
+
+      <div id="receiptResultPanel" class="card hidden">
+        <div class="card-title">🧾 Receipt Data Found</div>
+        <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:300px;overflow-y:auto;">
+            <div id="receiptDataDisplay">Waiting for scan...</div>
         </div>
 
-        <div class="card">
-            <div class="card-title">📸 Scan from Image</div>
-            <input type="file" id="imageUpload" accept="image/*" />
-            <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
-        </div>
+        <label>Store / Receipt Name</label>
+        <input type="text" id="receiptStoreName" placeholder="e.g. SM Supermarket" />
+        <label>Total Price (₱) <span style="font-weight:normal;font-size:0.8rem;">(Used if no items found)</span></label>
+        <input type="number" id="receiptTotal" placeholder="0.00" step="0.01" />
+        <label>Category for Items</label>
+        <select id="receiptCategory">
+          <option value="Groceries">Groceries</option>
+          <option value="Vegetables">Vegetables</option>
+          <option value="Meat">Meat</option>
+          <option value="Dairy">Dairy</option>
+          <option value="Snacks">Snacks</option>
+          <option value="Beverages">Beverages</option>
+          <option value="Household">Household</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Other">Other</option>
+        </select>
+        <button class="btn mt-12" id="receiptSaveBtn">💾 Save Receipt Items</button>
+        <button class="btn btn-secondary mt-12" id="receiptCancelBtn">Cancel</button>
+      </div>
+
     </div>
 
-    <!-- ========================================================== -->
-    <!-- PANEL: MANUAL -->
-    <!-- ========================================================== -->
     <div id="panel-manual" class="panel">
-        <div class="card">
-            <div class="card-title">✍️ Manual Entry</div>
-            <label>Product / Bill Name</label>
-            <input type="text" id="manualName" placeholder="e.g. Electricity Bill" />
-            <label>Price (₱)</label>
-            <input type="number" id="manualPrice" placeholder="0.00" step="0.01" />
-            <label>Category</label>
-            <select id="manualCategory">
-                <option value="Groceries">Groceries</option>
-                <option value="Vegetables">Vegetables</option>
-                <option value="Meat">Meat</option>
-                <option value="Dairy">Dairy</option>
-                <option value="Snacks">Snacks</option>
-                <option value="Beverages">Beverages</option>
-                <option value="Household">Household</option>
-                <option value="Utilities">Utilities</option>
-                <option value="Other">Other</option>
-            </select>
-            <label>Date (optional)</label>
-            <input type="date" id="manualDate" />
-            <button class="btn mt-12" id="manualSaveBtn">💾 Save Entry</button>
+      <div class="card">
+        <div class="card-title">✍️ Manual Entry</div>
+        <label>Product / Bill Name</label>
+        <input type="text" id="manualName" placeholder="e.g. Electricity Bill" />
+        <label>Price (₱)</label>
+        <input type="number" id="manualPrice" placeholder="0.00" step="0.01" />
+        <label>Category</label>
+        <select id="manualCategory">
+          <option value="Groceries">Groceries</option>
+          <option value="Vegetables">Vegetables</option>
+          <option value="Meat">Meat</option>
+          <option value="Dairy">Dairy</option>
+          <option value="Snacks">Snacks</option>
+          <option value="Beverages">Beverages</option>
+          <option value="Household">Household</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Other">Other</option>
+        </select>
+        <label>Date (optional)</label>
+        <input type="date" id="manualDate" />
+        <button class="btn mt-12" id="manualSaveBtn">💾 Save Entry</button>
+      </div>
+      <div class="card">
+        <div class="card-title">⚡ Quick Bills</div>
+        <div class="flex">
+          <button class="btn btn-secondary" data-bill="Electricity">💡 Electricity</button>
+          <button class="btn btn-secondary" data-bill="Internet">🌐 Internet</button>
+          <button class="btn btn-secondary" data-bill="Water">💧 Water</button>
         </div>
-        <div class="card">
-            <div class="card-title">⚡ Quick Bills</div>
-            <div class="flex">
-                <button class="btn btn-secondary" data-bill="Electricity">💡 Electricity</button>
-                <button class="btn btn-secondary" data-bill="Internet">🌐 Internet</button>
-                <button class="btn btn-secondary" data-bill="Water">💧 Water</button>
-            </div>
-            <p style="font-size:0.8rem;color:#64748b;margin-top:8px;">
-                Clicking will open manual form with category "Utilities".
-            </p>
-        </div>
+        <p style="font-size:0.8rem;color:#64748b;margin-top:8px;">
+          Clicking will open manual form with category "Utilities".
+        </p>
+      </div>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- PANEL: LEDGER -->
-    <!-- ========================================================== -->
     <div id="panel-ledger" class="panel">
-        <div class="card">
-            <div class="card-title">📋 All Entries</div>
-            <div class="flex">
-                <button class="btn btn-secondary" id="refreshLedger">⟳ Refresh</button>
-                <button class="btn btn-danger" id="clearAllBtn">🗑 Clear All</button>
-            </div>
-            <div id="ledgerList"></div>
-            <div class="summary-box mt-12">
-                <div class="label">Total Spent</div>
-                <div class="amount" id="ledgerTotal">₱0.00</div>
-            </div>
+      <div class="card">
+        <div class="card-title">📋 All Entries</div>
+        <div class="flex">
+          <button class="btn btn-secondary" id="refreshLedger">⟳ Refresh</button>
+          <button class="btn btn-danger" id="clearAllBtn">🗑 Clear All</button>
         </div>
+        <div id="ledgerList"></div>
+        <div class="summary-box mt-12">
+          <div class="label">Total Spent</div>
+          <div class="amount" id="ledgerTotal">₱0.00</div>
+        </div>
+      </div>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- PANEL: REPORTS -->
-    <!-- ========================================================== -->
     <div id="panel-reports" class="panel">
-        <div class="card">
-            <div class="card-title">📊 Spending Reports</div>
-            <div class="flex">
-                <select id="reportPeriod">
-                    <option value="week">This Week</option>
-                    <option value="month" selected>This Month</option>
-                    <option value="quarter">This Quarter</option>
-                    <option value="year">This Year</option>
-                </select>
-                <button class="btn btn-secondary" id="refreshReports">⟳ Update</button>
-            </div>
-            <div class="summary-box mt-12">
-                <div class="label">Total for period</div>
-                <div class="amount" id="reportTotal">₱0.00</div>
-            </div>
-            <canvas id="categoryChart" height="180" style="margin-top:16px;"></canvas>
-            <div id="reportBreakdown" style="margin-top:12px;"></div>
+      <div class="card">
+        <div class="card-title">📊 Spending Reports</div>
+        <div class="flex">
+          <select id="reportPeriod">
+            <option value="week">This Week</option>
+            <option value="month" selected>This Month</option>
+            <option value="quarter">This Quarter</option>
+            <option value="year">This Year</option>
+          </select>
+          <button class="btn btn-secondary" id="refreshReports">⟳ Update</button>
         </div>
-        <div class="card">
-            <div class="card-title">🏠 Utility Bills (separate)</div>
-            <div id="utilitySummary">Loading...</div>
+        <div class="summary-box mt-12">
+          <div class="label">Total for period</div>
+          <div class="amount" id="reportTotal">₱0.00</div>
         </div>
+        <canvas id="categoryChart" height="180" style="margin-top:16px;"></canvas>
+        <div id="reportBreakdown" style="margin-top:12px;"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🏠 Utility Bills (separate)</div>
+        <div id="utilitySummary">Loading...</div>
+      </div>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- PANEL: SETTINGS -->
-    <!-- ========================================================== -->
     <div id="panel-settings" class="panel">
-        <div class="card">
-            <div class="card-title">☁️ GitHub Sync</div>
-            <label>GitHub Token</label>
-            <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" />
-            <label>Repository (owner/repo)</label>
-            <input type="text" id="githubRepo" placeholder="username/zkeeper-data" />
-            <label>Filename (e.g. data.json)</label>
-            <input type="text" id="githubFile" value="zkeeper-data.json" />
-            <div class="flex mt-12">
-                <button class="btn" id="syncPushBtn">⬆ Push to GitHub</button>
-                <button class="btn btn-secondary" id="syncPullBtn">⬇ Pull from GitHub</button>
-            </div>
-            <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
-            <hr style="margin:16px 0;border-color:#e2e8f0;" />
-            <button class="btn btn-secondary" id="exportJson">📥 Export JSON (backup)</button>
-            <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON (restore)</button>
-            <input type="file" id="importFileInput" accept=".json" style="display:none;" />
+      <div class="card">
+        <div class="card-title">☁️ GitHub Sync</div>
+        <label>GitHub Token</label>
+        <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" />
+        <label>Repository (owner/repo)</label>
+        <input type="text" id="githubRepo" placeholder="username/zkeeper-data" />
+        <label>Filename (e.g. data.json)</label>
+        <input type="text" id="githubFile" value="zkeeper-data.json" />
+        <div class="flex mt-12">
+          <button class="btn" id="syncPushBtn">⬆ Push to GitHub</button>
+          <button class="btn btn-secondary" id="syncPullBtn">⬇ Pull from GitHub</button>
         </div>
-        <div class="card">
-            <div class="card-title">📱 About</div>
-            <p style="color:#64748b;font-size:0.9rem;">
-                Z‑Keeper v1.0 — All data stored locally in your browser (IndexedDB).<br />
-                Sync to GitHub for backup & family sharing.
-            </p>
-        </div>
+        <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
+        <hr style="margin:16px 0;border-color:#e2e8f0;" />
+        <button class="btn btn-secondary" id="exportJson">📥 Export JSON (backup)</button>
+        <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON (restore)</button>
+        <input type="file" id="importFileInput" accept=".json" style="display:none;" />
+      </div>
+      <div class="card">
+        <div class="card-title">📱 About</div>
+        <p style="color:#64748b;font-size:0.9rem;">
+          Z‑Keeper v1.0 — All data stored locally in your browser (IndexedDB).<br />
+          Sync to GitHub for backup & family sharing.
+        </p>
+      </div>
     </div>
 
-</div>
+  </div>
 
-<!-- ========================================================== -->
-<!-- SCAN CONFIRMATION MODAL -->
-<!-- ========================================================== -->
-<div class="modal-overlay" id="scanModal">
-    <div class="modal-box">
-        <div class="modal-title">
-            📦 Scanned Item
-            <span class="badge">New</span>
-        </div>
-        <div class="scanned-data">
-            <div class="label">🔍 Decoded Data</div>
-            <div id="scannedRawData">-</div>
-        </div>
-        <div class="form-group">
-            <label for="modalProductName">Product Name</label>
-            <input type="text" id="modalProductName" placeholder="Enter product name..." />
-        </div>
-        <div class="form-group">
-            <label for="modalProductPrice">Price (₱)</label>
-            <input type="number" id="modalProductPrice" placeholder="0.00" step="0.01" />
-        </div>
-        <div class="form-group">
-            <label for="modalProductCategory">Category</label>
-            <select id="modalProductCategory">
-                <option value="Groceries">Groceries</option>
-                <option value="Vegetables">Vegetables</option>
-                <option value="Meat">Meat</option>
-                <option value="Dairy">Dairy</option>
-                <option value="Snacks">Snacks</option>
-                <option value="Beverages">Beverages</option>
-                <option value="Household">Household</option>
-                <option value="Utilities">Utilities</option>
-                <option value="Other">Other</option>
-            </select>
-        </div>
-        <div class="modal-actions">
-            <button class="btn btn-cancel" id="modalCancelBtn">Cancel</button>
-            <button class="btn btn-success" id="modalSaveBtn">✅ Save Entry</button>
-        </div>
-    </div>
-</div>
-
-<!-- ========================================================== -->
-<!-- ===== JAVASCRIPT ===== -->
-<!-- ========================================================== -->
-<script>
+  <script>
     (function() {
-        'use strict';
+      'use strict';
 
-        // ---------------------------------------------------------
-        // 1. DATABASE (Dexie)
-        // ---------------------------------------------------------
-        const db = new Dexie('ZKeeperDB');
-        db.version(1).stores({
-            entries: '++id, name, price, category, date, type, synced'
+      // ---------------------------------------------------------
+      // 1. DATABASE (Dexie)
+      // ---------------------------------------------------------
+      const db = new Dexie('ZKeeperDB');
+      db.version(1).stores({
+        entries: '++id, name, price, category, date, type, synced'
+      });
+
+      // ---------------------------------------------------------
+      // 2. STATE & UTILS
+      // ---------------------------------------------------------
+      let currentEntries = [];
+      let chartInstance = null;
+      let html5QrCode = null;
+      let isScannerRunning = false;
+
+      const $ = (id) => document.getElementById(id);
+      const $$ = (sel) => document.querySelectorAll(sel);
+
+      function formatDate(d) {
+        const date = new Date(d);
+        return date.toISOString().slice(0,10);
+      }
+
+      function formatCurrency(amount) {
+        return '₱' + Number(amount).toFixed(2);
+      }
+
+      function getDefaultDate() {
+        return new Date().toISOString().slice(0,10);
+      }
+
+      function getDateRange(period) {
+        const now = new Date();
+        let start = new Date(now);
+        let end = new Date(now);
+        switch (period) {
+          case 'week':
+            start.setDate(now.getDate() - now.getDay()); 
+            break;
+          case 'month':
+            start.setDate(1);
+            break;
+          case 'quarter':
+            const month = now.getMonth();
+            const quarterStartMonth = Math.floor(month / 3) * 3;
+            start.setMonth(quarterStartMonth, 1);
+            break;
+          case 'year':
+            start.setMonth(0, 1);
+            break;
+          default:
+            start = new Date(0);
+        }
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+        return { start, end };
+      }
+
+      // ---------------------------------------------------------
+      // 3. CORE CRUD
+      // ---------------------------------------------------------
+      async function loadEntries() {
+        currentEntries = await db.entries.toArray();
+        return currentEntries;
+      }
+
+      async function addEntry(name, price, category, date, type='expense') {
+        if (!name || !price) return;
+        const entry = {
+          name: name.trim(),
+          price: parseFloat(price),
+          category: category || 'Other',
+          date: date || getDefaultDate(),
+          type: type,
+          synced: 0,
+          createdAt: new Date().toISOString()
+        };
+        await db.entries.add(entry);
+        await refreshAll();
+      }
+
+      async function deleteEntry(id) {
+        await db.entries.delete(id);
+        await refreshAll();
+      }
+
+      async function clearAllEntries() {
+        if (!confirm('Delete ALL entries permanently?')) return;
+        await db.entries.clear();
+        await refreshAll();
+      }
+
+      // ---------------------------------------------------------
+      // 4. UI REFRESH
+      // ---------------------------------------------------------
+      async function refreshAll() {
+        await loadEntries();
+        renderLedger();
+        renderReports();
+        renderUtilitySummary();
+        updateSyncStatus();
+      }
+
+      function renderLedger() {
+        const list = $('ledgerList');
+        if (!list) return;
+
+        if (currentEntries.length === 0) {
+          list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
+          $('ledgerTotal').textContent = '₱0.00';
+          return;
+        }
+
+        const sorted = [...currentEntries].sort((a,b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date);
+          return b.id - a.id;
         });
 
-        // ---------------------------------------------------------
-        // 2. STATE
-        // ---------------------------------------------------------
-        let currentEntries = [];
-        let chartInstance = null;
-        let html5QrCode = null;
-        let isScannerRunning = false;
-        let lastScannedData = null;
+        let html = '';
+        let total = 0;
+        sorted.forEach(e => {
+          total += e.price;
+          html += `
+            <div class="entry-item">
+              <div class="info">
+                <div class="name">${escapeHtml(e.name)}</div>
+                <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
+              </div>
+              <div class="price">${formatCurrency(e.price)}</div>
+              <button class="delete-btn" data-id="${e.id}">✕</button>
+            </div>
+          `;
+        });
+        
+        list.innerHTML = html;
+        $('ledgerTotal').textContent = formatCurrency(total);
 
-        // DOM refs
-        const $ = (id) => document.getElementById(id);
-        const $$ = (sel) => document.querySelectorAll(sel);
+        list.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.id);
+            await deleteEntry(id);
+          });
+        });
+      }
 
-        // ---------------------------------------------------------
-        // 3. HELPERS
-        // ---------------------------------------------------------
-        function formatDate(d) {
-            const date = new Date(d);
-            return date.toISOString().slice(0,10);
-        }
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
 
-        function formatCurrency(amount) {
-            return '₱' + Number(amount).toFixed(2);
-        }
+      // ---------------------------------------------------------
+      // 5. REPORTS & CHARTS
+      // ---------------------------------------------------------
+      function getCategoryBreakdown(entries, start, end) {
+        const filtered = entries.filter(e => {
+          const d = new Date(e.date);
+          return d >= start && d <= end;
+        });
+        const totals = {};
+        filtered.forEach(e => {
+          const cat = e.category || 'Other';
+          totals[cat] = (totals[cat] || 0) + e.price;
+        });
+        return { filtered, totals, total: filtered.reduce((s,e) => s + e.price, 0) };
+      }
 
-        function getDefaultDate() {
-            return new Date().toISOString().slice(0,10);
-        }
+      function renderReports() {
+        const period = $('reportPeriod').value;
+        const { start, end } = getDateRange(period);
+        const { filtered, totals, total } = getCategoryBreakdown(currentEntries, start, end);
+        
+        $('reportTotal').textContent = formatCurrency(total);
 
-        function getDateRange(period) {
-            const now = new Date();
-            let start = new Date(now);
-            let end = new Date(now);
-            switch (period) {
-                case 'week':
-                    start.setDate(now.getDate() - now.getDay());
-                    break;
-                case 'month':
-                    start.setDate(1);
-                    break;
-                case 'quarter':
-                    const month = now.getMonth();
-                    const quarterStartMonth = Math.floor(month / 3) * 3;
-                    start.setMonth(quarterStartMonth, 1);
-                    break;
-                case 'year':
-                    start.setMonth(0, 1);
-                    break;
-                default:
-                    start = new Date(0);
-            }
-            start.setHours(0,0,0,0);
-            end.setHours(23,59,59,999);
-            return { start, end };
-        }
-
-        // ---------------------------------------------------------
-        // 4. CORE CRUD
-        // ---------------------------------------------------------
-        async function loadEntries() {
-            currentEntries = await db.entries.toArray();
-            return currentEntries;
-        }
-
-        async function addEntry(name, price, category, date, type='expense') {
-            if (!name || !price) return;
-            const entry = {
-                name: name.trim(),
-                price: parseFloat(price),
-                category: category || 'Other',
-                date: date || getDefaultDate(),
-                type: type,
-                synced: 0,
-                createdAt: new Date().toISOString()
-            };
-            await db.entries.add(entry);
-            await refreshAll();
-            return entry;
-        }
-
-        async function deleteEntry(id) {
-            await db.entries.delete(id);
-            await refreshAll();
-        }
-
-        async function clearAllEntries() {
-            if (!confirm('Delete ALL entries permanently?')) return;
-            await db.entries.clear();
-            await refreshAll();
-        }
-
-        // ---------------------------------------------------------
-        // 5. UI REFRESH
-        // ---------------------------------------------------------
-        async function refreshAll() {
-            await loadEntries();
-            renderLedger();
-            renderReports();
-            renderUtilitySummary();
-            updateSyncStatus();
-        }
-
-        function renderLedger() {
-            const list = $('ledgerList');
-            if (!list) return;
-            if (currentEntries.length === 0) {
-                list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
-                $('ledgerTotal').textContent = '₱0.00';
-                return;
-            }
-            const sorted = [...currentEntries].sort((a,b) => {
-                if (a.date !== b.date) return b.date.localeCompare(a.date);
-                return b.id - a.id;
-            });
-            let html = '';
-            let total = 0;
-            sorted.forEach(e => {
-                total += e.price;
-                html += `
-                    <div class="entry-item">
-                        <div class="info">
-                            <div class="name">${escapeHtml(e.name)}</div>
-                            <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
-                        </div>
-                        <div class="price">${formatCurrency(e.price)}</div>
-                        <button class="delete-btn" data-id="${e.id}">✕</button>
-                    </div>
-                `;
-            });
-            list.innerHTML = html;
-            $('ledgerTotal').textContent = formatCurrency(total);
-
-            list.querySelectorAll('.delete-btn').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    const id = Number(btn.dataset.id);
-                    await deleteEntry(id);
-                });
-            });
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // ---------------------------------------------------------
-        // 6. REPORTS & CHARTS
-        // ---------------------------------------------------------
-        function getCategoryBreakdown(entries, start, end) {
-            const filtered = entries.filter(e => {
-                const d = new Date(e.date);
-                return d >= start && d <= end;
-            });
-            const totals = {};
-            filtered.forEach(e => {
-                const cat = e.category || 'Other';
-                totals[cat] = (totals[cat] || 0) + e.price;
-            });
-            return { filtered, totals, total: filtered.reduce((s,e) => s + e.price, 0) };
-        }
-
-        function renderReports() {
-            const period = $('reportPeriod').value;
-            const { start, end } = getDateRange(period);
-            const { filtered, totals, total } = getCategoryBreakdown(currentEntries, start, end);
-
-            $('reportTotal').textContent = formatCurrency(total);
-
-            const breakdownDiv = $('reportBreakdown');
-            let html = '';
-            const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
-            if (sortedCats.length === 0) {
-                html = '<p style="color:#94a3b8;text-align:center;">No data for this period.</p>';
-            } else {
-                sortedCats.forEach(cat => {
-                    const amount = totals[cat];
-                    const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : 0;
-                    html += `
-                        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
-                            <span>${escapeHtml(cat)}</span>
-                            <span><strong>${formatCurrency(amount)}</strong> (${pct}%)</span>
-                        </div>
-                    `;
-                });
-            }
-            breakdownDiv.innerHTML = html;
-
-            if (chartInstance) chartInstance.destroy();
-            const ctx = $('categoryChart').getContext('2d');
-            const labels = Object.keys(totals);
-            const data = Object.values(totals);
-            chartInstance = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: labels.length ? labels : ['No Data'],
-                    datasets: [{
-                        data: labels.length ? data : [1],
-                        backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { position: 'bottom' }
-                    }
-                }
-            });
-        }
-
-        function renderUtilitySummary() {
-            const utilEntries = currentEntries.filter(e => e.category === 'Utilities');
-            const total = utilEntries.reduce((s,e) => s + e.price, 0);
-            const count = utilEntries.length;
-            $('utilitySummary').innerHTML = `
-                <div style="display:flex;justify-content:space-between;padding:8px 0;">
-                    <span>Total Utilities</span>
-                    <strong>${formatCurrency(total)}</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;">
-                    <span>Number of bills</span>
-                    <strong>${count}</strong>
-                </div>
+        const breakdownDiv = $('reportBreakdown');
+        let html = '';
+        const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
+        
+        if (sortedCats.length === 0) {
+          html = '<p style="color:#94a3b8;text-align:center;">No data for this period.</p>';
+        } else {
+          sortedCats.forEach(cat => {
+            const amount = totals[cat];
+            const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : 0;
+            html += `
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+                <span>${escapeHtml(cat)}</span>
+                <span><strong>${formatCurrency(amount)}</strong> (${pct}%)</span>
+              </div>
             `;
+          });
         }
+        breakdownDiv.innerHTML = html;
 
-        // ---------------------------------------------------------
-        // 7. SCANNER (html5-qrcode)
-        // ---------------------------------------------------------
-        async function initScanner() {
-            if (html5QrCode) {
-                await html5QrCode.stop();
-                html5QrCode.clear();
-            }
-            html5QrCode = new Html5Qrcode("reader");
+        if (chartInstance) chartInstance.destroy();
+        const ctx = $('categoryChart').getContext('2d');
+        const labels = Object.keys(totals);
+        const data = Object.values(totals);
+        
+        chartInstance = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: labels.length ? labels : ['No Data'],
+            datasets: [{
+              data: labels.length ? data : [1],
+              backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b']
+            }]
+          },
+          options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        });
+      }
+
+      function renderUtilitySummary() {
+        const utilEntries = currentEntries.filter(e => e.category === 'Utilities');
+        const total = utilEntries.reduce((s,e) => s + e.price, 0);
+        const count = utilEntries.length;
+        
+        $('utilitySummary').innerHTML = `
+          <div style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span>Total Utilities</span>
+            <strong>${formatCurrency(total)}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;">
+            <span>Number of bills</span>
+            <strong>${count}</strong>
+          </div>
+        `;
+      }
+
+      // ---------------------------------------------------------
+      // 6. RECEIPT OCR MODULE & CONFIG
+      // ---------------------------------------------------------
+      const RECEIPT_CONFIG = {
+          tessLanguage: 'fil+eng', // Filipino + English
+          tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
+          mindee: {
+              apiKey: 'YOUR_MINDEE_API_KEY',
+              endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict'
+          },
+          structOcr: {
+              apiKey: 'YOUR_STRUCTOCR_API_KEY',
+              endpoint: 'https://api.structocr.com/v1/ocr'
+          }
+      };
+
+      class ReceiptParser {
+          static parse(rawText) {
+              const result = { storeName: null, date: null, total: null, items: [], rawText: rawText, confidence: 0 };
+              const cleanText = this.cleanText(rawText);
+              const lines = cleanText.split('\n').filter(line => line.trim().length > 0);
+              
+              result.storeName = this.extractStoreName(lines, cleanText);
+              result.date = this.extractDate(cleanText);
+              result.total = this.extractTotal(cleanText);
+              result.items = this.extractItems(lines, cleanText);
+              result.confidence = this.calculateConfidence(result);
+              return result;
+          }
+
+          static cleanText(text) {
+              return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ').replace(/\s+/g, ' ').trim();
+          }
+
+          static extractStoreName(lines, fullText) {
+              const patterns = [
+                  /^([A-Z][A-Z\s&']{2,})$/m,
+                  /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i,
+                  /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i,
+                  /(?:Thank you|Thanks for shopping at|Welcome to)\s+([A-Z][A-Z\s&']{2,})/i
+              ];
+              for (const pattern of patterns) {
+                  const match = fullText.match(pattern);
+                  if (match) return match[1] || match[0];
+              }
+              for (let i = 0; i < Math.min(5, lines.length); i++) {
+                  const line = lines[i].trim();
+                  if (line === line.toUpperCase() && line.length > 3 && line.length < 40) return line;
+              }
+              return null;
+          }
+
+          static extractDate(text) {
+              const patterns = [
+                  /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/,
+                  /(\d{1,2})-(\d{1,2})-(\d{2,4})/,
+                  /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i,
+                  /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i
+              ];
+              for (const pattern of patterns) {
+                  const match = text.match(pattern);
+                  if (match) {
+                      let day, month, year;
+                      if (pattern.toString().includes('Jan')) {
+                          month = this.getMonthNumber(match[2] || match[3]);
+                          day = parseInt(match[1] || match[2]);
+                          year = parseInt(match[3] || match[4]);
+                      } else {
+                          const parts = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+                          if (parts[0] > 12) { day = parts[0]; month = parts[1]; }
+                          else if (parts[1] > 12) { day = parts[1]; month = parts[0]; }
+                          else { month = parts[0]; day = parts[1]; }
+                          year = parts[2];
+                      }
+                      if (year < 100) year = year + (year > 25 ? 1900 : 2000);
+                      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      }
+                  }
+              }
+              return null;
+          }
+
+          static getMonthNumber(monthName) {
+              const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+              return months.indexOf(monthName.toLowerCase().substring(0, 3)) + 1;
+          }
+
+          static extractTotal(text) {
+              const patterns = [
+                  /(?:TOTAL|AMOUNT|TOTAL DUE|NET AMOUNT|PAYMENT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+                  /TOTAL\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+                  /[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/
+              ];
+              for (const pattern of patterns) {
+                  const match = text.match(pattern);
+                  if (match) return parseFloat(match[1].replace(/,/g, ''));
+              }
+              return null;
+          }
+
+          static extractItems(lines, fullText) {
+              const items = [];
+              for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i].trim();
+                  if (!line || this.isFooterLine(line) || this.isHeaderLine(line)) continue;
+
+                  const priceMatch = line.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+                  const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+                  const codeMatch = line.match(/^(\d{6,}|\w{6,})/);
+
+                  if (priceMatch && codeMatch) {
+                      const name = line.replace(priceMatch[0], '').replace(codeMatch[0], '').trim();
+                      if (name && price) items.push({ name: name, code: codeMatch[1], price: price, line: line });
+                  } else if (priceMatch && !codeMatch) {
+                      const name = line.replace(priceMatch[0], '').trim();
+                      if (name && price && name.length < 50) items.push({ name: name, code: null, price: price, line: line });
+                  } else if (codeMatch && !priceMatch) {
+                      const potentialItem = { name: line.replace(codeMatch[0], '').trim() || codeMatch[1], code: codeMatch[1], price: null, line: line };
+                      if (i + 1 < lines.length) {
+                          const nextPriceMatch = lines[i + 1].trim().match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+                          if (nextPriceMatch) {
+                              potentialItem.price = parseFloat(nextPriceMatch[1].replace(/,/g, ''));
+                              i++;
+                          }
+                      }
+                      if (potentialItem.price) items.push(potentialItem);
+                  }
+              }
+              return items.length < 2 ? this.extractItemsFallback(lines) : items;
+          }
+
+          static extractItemsFallback(lines) {
+              const items = [];
+              for (const line of lines) {
+                  const trimmed = line.trim();
+                  const priceMatch = trimmed.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+                  if (priceMatch) {
+                      const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+                      const name = trimmed.replace(priceMatch[0], '').trim();
+                      if (name && price) items.push({ name: name, code: null, price: price, line: trimmed });
+                  }
+              }
+              return items;
+          }
+
+          static isFooterLine(line) {
+              return ['TOTAL', 'AMOUNT', 'TAX', 'VAT', 'CHANGE', 'CASH', 'PAYMENT', 'DUE', 'SUBTOTAL'].some(k => line.toUpperCase().includes(k));
+          }
+
+          static isHeaderLine(line) {
+              return ['TIN', 'DATE', 'TIME', 'RECEIPT', 'INVOICE', 'TRANSACTION', 'SALES', 'INFORMATION'].some(k => line.toUpperCase().includes(k));
+          }
+
+          static calculateConfidence(result) {
+              let score = 0;
+              if (result.storeName) score += 20;
+              if (result.date) score += 20;
+              if (result.total) score += 25;
+              if (result.items.length > 0) score += Math.min(35, result.items.length * 5);
+              return Math.min(100, score);
+          }
+      }
+
+      class ReceiptOCR {
+          static isOnline() { return navigator.onLine; }
+
+          static async scan(image, options = {}, progressCb = () => {}) {
+              const useOnline = this.isOnline() && options.preferOnline !== false;
+              try {
+                  if (useOnline) {
+                      try {
+                          progressCb('Calling Mindee API...', 40);
+                          return await this.scanWithMindee(image);
+                      } catch (mindeeError) {
+                          console.warn('Mindee failed, trying StructOCR...');
+                          try {
+                              progressCb('Calling StructOCR API...', 50);
+                              return await this.scanWithStructOCR(image);
+                          } catch (structError) {
+                              console.warn('StructOCR failed, falling back to Tesseract...');
+                              return await this.scanWithTesseract(image, progressCb);
+                          }
+                      }
+                  } else {
+                      return await this.scanWithTesseract(image, progressCb);
+                  }
+              } catch (error) {
+                  console.error('All OCR methods failed:', error);
+                  throw new Error('Failed to scan receipt. Please try again or enter manually.');
+              }
+          }
+
+          static async scanWithTesseract(image, progressCb) {
+              try {
+                  progressCb('Loading Tesseract.js (may download data on first run)...', 30);
+                  const logger = (m) => {
+                      if (m.status === 'recognizing text') {
+                          progressCb('Recognizing text...', 30 + (m.progress * 60));
+                      }
+                  };
+                  const result = await Tesseract.recognize(image, RECEIPT_CONFIG.tessLanguage, {
+                      logger: logger,
+                      tessedit_pageseg_mode: RECEIPT_CONFIG.tessPageSegMode
+                  });
+                  const parsed = ReceiptParser.parse(result.data.text);
+                  parsed.scanMethod = 'offline (Tesseract)';
+                  parsed.confidence = Math.min(parsed.confidence, 85);
+                  return parsed;
+              } catch (error) { throw error; }
+          }
+
+          static async scanWithMindee(image) {
+              const apiKey = RECEIPT_CONFIG.mindee.apiKey;
+              if (!apiKey || apiKey === 'YOUR_MINDEE_API_KEY') throw new Error('Mindee API key not configured');
+              const base64Image = await this.imageToBase64(image);
+              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ document: base64Image })
+              });
+              if (!response.ok) throw new Error(`Mindee API error: ${response.status}`);
+              return this.parseMindeeResponse(await response.json());
+          }
+
+          static async scanWithStructOCR(image) {
+              const apiKey = RECEIPT_CONFIG.structOcr.apiKey;
+              if (!apiKey || apiKey === 'YOUR_STRUCTOCR_API_KEY') throw new Error('StructOCR API key not configured');
+              const base64Image = await this.imageToBase64(image);
+              const response = await fetch(RECEIPT_CONFIG.structOcr.endpoint, {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ image: base64Image, parser: 'receipt' })
+              });
+              if (!response.ok) throw new Error(`StructOCR API error: ${response.status}`);
+              return this.parseStructOCRResponse(await response.json());
+          }
+
+          static parseMindeeResponse(data) {
+              const prediction = data.document?.inference?.prediction || {};
+              return {
+                  storeName: prediction.supplier?.value || null,
+                  date: prediction.date?.value || null,
+                  total: prediction.total_amount?.value || null,
+                  items: (prediction.line_items || []).map(item => ({
+                      name: item.description || '', code: null, price: item.total_amount?.value || item.unit_price?.value || null
+                  })),
+                  confidence: 100, scanMethod: 'online (Mindee)', rawText: data.document?.extracted_text || ''
+              };
+          }
+
+          static parseStructOCRResponse(data) {
+              return {
+                  storeName: data.merchant_name || null,
+                  date: data.date || null,
+                  total: data.total || null,
+                  items: (data.items || []).map(item => ({
+                      name: item.name || '', code: item.sku || null, price: item.price || null
+                  })),
+                  confidence: 100, scanMethod: 'online (StructOCR)', rawText: data.raw_text || ''
+              };
+          }
+
+          static imageToBase64(image) {
+              return new Promise((resolve, reject) => {
+                  if (typeof image === 'string') { resolve(image); return; }
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result.split(',')[1]);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(image);
+              });
+          }
+      }
+
+      // ---------------------------------------------------------
+      // 7. SCANNER & HARDWARE MODULES
+      // ---------------------------------------------------------
+      async function initScanner() {
+        if (html5QrCode) {
+          await html5QrCode.stop();
+          html5QrCode.clear();
+        }
+        html5QrCode = new Html5Qrcode("reader");
+        try {
+          await html5QrCode.start(
+            { facingMode: "environment" }, 
+            { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, 
+            onScanSuccess, 
+            () => {}
+          );
+          isScannerRunning = true;
+          $('startScanner').textContent = '▶ Running';
+        } catch (err) { alert('Camera unavailable: ' + err); }
+      }
+
+      function onScanSuccess(decodedText) {
+        stopScanner();
+        $('quickName').value = decodedText;
+        $('quickPrice').value = '';
+        $('quickAddPanel').classList.remove('hidden');
+        $('receiptResultPanel').classList.add('hidden'); // Ensure receipt panel is closed
+        $('quickPrice').focus();
+      }
+
+      async function stopScanner() {
+        if (html5QrCode && isScannerRunning) {
+          try { await html5QrCode.stop(); html5QrCode.clear(); } catch (e) {}
+          isScannerRunning = false;
+          $('startScanner').textContent = '▶ Start Camera';
+          $('quickAddPanel').classList.add('hidden');
+        }
+      }
+
+      async function scanImage(file) {
+        if (!file) return;
+        const tempScanner = new Html5Qrcode('reader');
+        try {
+          const result = await tempScanner.scanFile(file, true);
+          $('quickName').value = result;
+          $('quickPrice').value = '';
+          $('quickAddPanel').classList.remove('hidden');
+          $('receiptResultPanel').classList.add('hidden');
+          $('quickPrice').focus();
+        } catch (err) {
+          alert('Could not detect 2D barcode in image. Try the Receipt OCR instead!');
+        } finally {
+          try { await tempScanner.clear(); } catch (e) {}
+        }
+      }
+
+      // ---------------------------------------------------------
+      // 8. OCR UI INTEGRATION
+      // ---------------------------------------------------------
+      async function handleReceiptScan() {
+          const fileInput = $('imageUpload');
+          if (!fileInput.files.length) {
+              alert('Please select a receipt image first.');
+              return;
+          }
+
+          const image = fileInput.files[0];
+          const progressDiv = $('receiptProgress');
+          const progressBar = $('ocrProgressBar');
+          const statusText = $('ocrStatus');
+
+          const updateProgress = (status, percent) => {
+              statusText.textContent = status;
+              progressBar.style.width = percent + '%';
+          };
+
+          try {
+              $('quickAddPanel').classList.add('hidden'); // Hide simple barcode form
+              progressDiv.style.display = 'block';
+              updateProgress('Initializing...', 10);
+
+              const result = await ReceiptOCR.scan(image, { preferOnline: true }, updateProgress);
+
+              updateProgress('Parsing receipt data...', 95);
+              showReceiptConfirmation(result);
+
+              updateProgress('Done!', 100);
+              setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
+
+          } catch (error) {
+              alert('Failed to scan receipt: ' + error.message);
+              progressDiv.style.display = 'none';
+          }
+      }
+
+      function showReceiptConfirmation(receiptData) {
+          const panel = $('receiptResultPanel');
+          const display = $('receiptDataDisplay');
+          
+          display.innerHTML = `
+              <div style="margin-bottom:8px;">
+                  <div class="label">🏪 Store</div>
+                  <div style="font-size:1.1rem;font-weight:600;">${escapeHtml(receiptData.storeName || 'Unknown')}</div>
+              </div>
+              <div style="margin-bottom:8px;">
+                  <div class="label">📅 Date</div>
+                  <div>${receiptData.date || 'Unknown'}</div>
+              </div>
+              <div style="margin-bottom:8px;">
+                  <div class="label">💰 Total</div>
+                  <div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(receiptData.total || 0)}</div>
+              </div>
+              ${receiptData.items && receiptData.items.length > 0 ? `
+                  <div style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:8px;">
+                      <div class="label">📦 Items (${receiptData.items.length})</div>
+                      ${receiptData.items.slice(0, 5).map(item => `
+                          <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin:4px 0;">
+                              <span style="flex:1;margin-right:8px;">${escapeHtml(item.name || 'Unknown')}</span>
+                              <span>${formatCurrency(item.price || 0)}</span>
+                          </div>
+                      `).join('')}
+                      ${receiptData.items.length > 5 ? `<div style="color:#94a3b8;font-size:0.8rem;">... and ${receiptData.items.length - 5} more items</div>` : ''}
+                  </div>
+              ` : '<div style="color:#ef4444;font-size:0.8rem;margin-top:8px;">No line items detected. Only total will be saved.</div>'}
+              <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">
+                  Confidence: ${receiptData.confidence || 0}% · ${receiptData.scanMethod || 'Unknown method'}
+              </div>
+          `;
+
+          $('receiptStoreName').value = receiptData.storeName || 'Store Receipt';
+          $('receiptTotal').value = receiptData.total || '';
+          $('receiptCategory').value = 'Groceries';
+
+          window._receiptItems = receiptData.items || [];
+          panel.classList.remove('hidden');
+          panel.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      async function saveReceiptItems() {
+          const items = window._receiptItems || [];
+          const fallbackName = $('receiptStoreName').value.trim();
+          const fallbackPrice = $('receiptTotal').value.trim();
+          const category = $('receiptCategory').value;
+
+          if (items.length > 0) {
+              let addedCount = 0;
+              for (const item of items) {
+                  if (item.name && item.price) {
+                      await addEntry(item.name, item.price, category);
+                      addedCount++;
+                  }
+              }
+              $('receiptResultPanel').classList.add('hidden');
+              alert(`✅ Added ${addedCount} items from receipt!`);
+          } else {
+              if (!fallbackName || !fallbackPrice) {
+                  alert('Please ensure there is a store name and total price if no items were found.');
+                  return;
+              }
+              await addEntry(fallbackName, fallbackPrice, category);
+              $('receiptResultPanel').classList.add('hidden');
+              alert('✅ Receipt saved as a single entry!');
+          }
+          window._receiptItems = null;
+      }
+
+      // ---------------------------------------------------------
+      // 9. GITHUB SYNC
+      // ---------------------------------------------------------
+      async function syncToGitHub(push = true) {
+        const token = $('githubToken').value.trim();
+        const repo = $('githubRepo').value.trim();
+        const file = $('githubFile').value.trim();
+        
+        if (!token || !repo || !file) {
+          $('syncMessage').textContent = '⚠️ Please fill all GitHub fields.';
+          return;
+        }
+        
+        $('syncMessage').textContent = '⏳ Syncing...';
+        try {
+          const url = `https://api.github.com/repos/${repo}/contents/${file}`;
+          const headers = { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' };
+          
+          if (push) {
+            let sha = null;
             try {
-                const config = {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0
-                };
-                await html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    onScanSuccess,
-                    onScanError
-                );
-                isScannerRunning = true;
-                $('startScanner').textContent = '▶ Running';
-                $('startScanner').style.background = '#22c55e';
-                $('startScanner').style.color = 'white';
-            } catch (err) {
-                alert('Camera unavailable: ' + err);
-            }
-        }
+              const getRes = await fetch(url, { headers });
+              if (getRes.ok) sha = (await getRes.json()).sha;
+            } catch (e) {}
 
-        function onScanSuccess(decodedText, decodedResult) {
-            // Stop scanner immediately
-            stopScanner();
-            
-            // Store the scanned data
-            lastScannedData = decodedText;
-            
-            // Show the confirmation modal
-            showScanConfirmation(decodedText);
-        }
-
-        function onScanError(err) {
-            // ignore
-        }
-
-        async function stopScanner() {
-            if (html5QrCode && isScannerRunning) {
-                try {
-                    await html5QrCode.stop();
-                    html5QrCode.clear();
-                } catch (e) {}
-                isScannerRunning = false;
-                $('startScanner').textContent = '▶ Start Camera';
-                $('startScanner').style.background = '';
-                $('startScanner').style.color = '';
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 8. SCAN CONFIRMATION MODAL
-        // ---------------------------------------------------------
-        function showScanConfirmation(scannedData) {
-            const modal = $('scanModal');
-            $('scannedRawData').textContent = scannedData;
-            
-            // Auto-fill the product name with the scanned data
-            $('modalProductName').value = scannedData;
-            $('modalProductPrice').value = '';
-            $('modalProductCategory').value = 'Groceries';
-            
-            modal.classList.add('active');
-            
-            // Focus on price field (since name is auto-filled)
-            setTimeout(() => $('modalProductPrice').focus(), 300);
-        }
-
-        function hideScanConfirmation() {
-            $('scanModal').classList.remove('active');
-            lastScannedData = null;
-        }
-
-        // ---------------------------------------------------------
-        // 9. IMAGE SCAN
-        // ---------------------------------------------------------
-        async function scanImage(file) {
-            if (!file) return;
-            
-            const tempScanner = new Html5Qrcode('reader');
-            
-            try {
-                const result = await tempScanner.scanFile(file, true);
-                // Show the confirmation modal with the scanned data
-                lastScannedData = result;
-                showScanConfirmation(result);
-            } catch (err) {
-                alert('Could not scan image: ' + err.message);
-            } finally {
-                try {
-                    await tempScanner.clear();
-                } catch (e) {}
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 10. GITHUB SYNC
-        // ---------------------------------------------------------
-        async function syncToGitHub(push = true) {
-            const token = $('githubToken').value.trim();
-            const repo = $('githubRepo').value.trim();
-            const file = $('githubFile').value.trim();
-            if (!token || !repo || !file) {
-                $('syncMessage').textContent = '⚠️ Please fill all GitHub fields.';
-                return;
-            }
-            $('syncMessage').textContent = '⏳ Syncing...';
-
-            try {
-                const url = `https://api.github.com/repos/${repo}/contents/${file}`;
-                const headers = {
-                    'Authorization': `token ${token}`,
-                    'Accept': 'application/vnd.github.v3+json'
-                };
-
-                if (push) {
-                    let sha = null;
-                    try {
-                        const getRes = await fetch(url, { headers });
-                        if (getRes.ok) {
-                            const data = await getRes.json();
-                            sha = data.sha;
-                        }
-                    } catch (e) {}
-
-                    const entries = await db.entries.toArray();
-                    const payload = {
-                        message: 'Update Z-Keeper data',
-                        content: btoa(JSON.stringify(entries, null, 2)),
-                        sha: sha || undefined
-                    };
-                    const res = await fetch(url, {
-                        method: 'PUT',
-                        headers: headers,
-                        body: JSON.stringify(payload)
-                    });
-                    if (res.ok) {
-                        $('syncMessage').textContent = '✅ Push successful!';
-                        await db.entries.toCollection().modify({ synced: 1 });
-                        updateSyncStatus();
-                    } else {
-                        const err = await res.json();
-                        $('syncMessage').textContent = '❌ Push failed: ' + err.message;
-                    }
-                } else {
-                    const res = await fetch(url, { headers });
-                    if (!res.ok) {
-                        if (res.status === 404) {
-                            $('syncMessage').textContent = 'ℹ️ No file found on GitHub to pull.';
-                        } else {
-                            const err = await res.json();
-                            $('syncMessage').textContent = '❌ Pull failed: ' + err.message;
-                        }
-                        return;
-                    }
-                    const data = await res.json();
-                    const content = atob(data.content);
-                    const remoteEntries = JSON.parse(content);
-                    await db.entries.clear();
-                    for (const e of remoteEntries) {
-                        const { id, ...entry } = e;
-                        await db.entries.add(entry);
-                    }
-                    $('syncMessage').textContent = '✅ Pull successful!';
-                    await refreshAll();
-                }
-            } catch (err) {
-                $('syncMessage').textContent = '❌ Error: ' + err.message;
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 11. SYNC STATUS
-        // ---------------------------------------------------------
-        function updateSyncStatus() {
-            const syncedCount = currentEntries.filter(e => e.synced === 1).length;
-            const total = currentEntries.length;
-            const el = $('syncStatus');
-            if (total === 0) {
-                el.textContent = '● empty';
-            } else if (syncedCount === total) {
-                el.textContent = '✓ synced';
-            } else {
-                el.textContent = `⚠ ${total - syncedCount} unsynced`;
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 12. EXPORT / IMPORT JSON
-        // ---------------------------------------------------------
-        async function exportJSON() {
-            const data = await db.entries.toArray();
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'zkeeper-backup.json';
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function importJSON(file) {
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    if (!Array.isArray(data)) throw new Error('Invalid format');
-                    await db.entries.clear();
-                    for (const entry of data) {
-                        const { id, ...clean } = entry;
-                        await db.entries.add(clean);
-                    }
-                    alert('Import successful!');
-                    await refreshAll();
-                } catch (err) {
-                    alert('Import failed: ' + err.message);
-                }
+            const entries = await db.entries.toArray();
+            const payload = {
+              message: 'Update Z-Keeper data',
+              content: btoa(JSON.stringify(entries, null, 2)),
+              sha: sha || undefined
             };
-            reader.readAsText(file);
-        }
 
-        // ---------------------------------------------------------
-        // 13. TAB SWITCHING
-        // ---------------------------------------------------------
-        function setupTabs() {
-            const tabs = document.querySelectorAll('.tab-btn');
-            tabs.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    tabs.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    const panelId = 'panel-' + this.dataset.tab;
-                    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-                    document.getElementById(panelId).classList.add('active');
+            const res = await fetch(url, { method: 'PUT', headers: headers, body: JSON.stringify(payload) });
+            if (res.ok) {
+              $('syncMessage').textContent = '✅ Push successful!';
+              await db.entries.toCollection().modify({ synced: 1 });
+              updateSyncStatus();
+            } else {
+              $('syncMessage').textContent = '❌ Push failed: ' + (await res.json()).message;
+            }
+          } else {
+            const res = await fetch(url, { headers });
+            if (!res.ok) {
+              $('syncMessage').textContent = res.status === 404 ? 'ℹ️ No file found on GitHub.' : '❌ Pull failed.';
+              return;
+            }
+            const remoteEntries = JSON.parse(atob((await res.json()).content));
+            await db.entries.clear();
+            for (const e of remoteEntries) {
+              const { id, ...entry } = e;
+              await db.entries.add(entry);
+            }
+            $('syncMessage').textContent = '✅ Pull successful!';
+            await refreshAll();
+          }
+        } catch (err) { $('syncMessage').textContent = '❌ Error: ' + err.message; }
+      }
 
-                    if (this.dataset.tab !== 'scan') {
-                        stopScanner();
-                    }
-                });
-            });
-        }
+      function updateSyncStatus() {
+        const syncedCount = currentEntries.filter(e => e.synced === 1).length;
+        const total = currentEntries.length;
+        const el = $('syncStatus');
+        
+        if (total === 0) el.textContent = '● empty';
+        else if (syncedCount === total) el.textContent = '✓ synced';
+        else el.textContent = `⚠ ${total - syncedCount} unsynced`;
+      }
 
-        // ---------------------------------------------------------
-        // 14. EVENT BINDINGS
-        // ---------------------------------------------------------
-        function init() {
-            // Tabs
-            setupTabs();
+      // ---------------------------------------------------------
+      // 10. EXPORT / IMPORT JSON
+      // ---------------------------------------------------------
+      async function exportJSON() {
+        const data = await db.entries.toArray();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'zkeeper-backup.json'; a.click();
+        URL.revokeObjectURL(url);
+      }
 
-            // Scanner
-            $('startScanner').addEventListener('click', initScanner);
-            $('stopScanner').addEventListener('click', stopScanner);
+      function importJSON(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+          try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error('Invalid format');
+            await db.entries.clear();
+            for (const entry of data) {
+              const { id, ...clean } = entry;
+              await db.entries.add(clean);
+            }
+            alert('Import successful!');
+            await refreshAll();
+          } catch (err) { alert('Import failed: ' + err.message); }
+        };
+        reader.readAsText(file);
+      }
 
-            // Image scan
-            $('scanImageBtn').addEventListener('click', function() {
-                const fileInput = $('imageUpload');
-                if (fileInput.files.length) {
-                    scanImage(fileInput.files[0]);
-                } else {
-                    alert('Please select an image first.');
-                }
-            });
-            $('imageUpload').addEventListener('change', function() {
-                if (this.files.length) {
-                    scanImage(this.files[0]);
-                }
-            });
+      // ---------------------------------------------------------
+      // 11. TAB SWITCHING
+      // ---------------------------------------------------------
+      function setupTabs() {
+        const tabs = document.querySelectorAll('.tab-btn');
+        tabs.forEach(btn => {
+          btn.addEventListener('click', function() {
+            tabs.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('panel-' + this.dataset.tab).classList.add('active');
+            if (this.dataset.tab !== 'scan') stopScanner();
+          });
+        });
+      }
 
-            // Modal - Cancel
-            $('modalCancelBtn').addEventListener('click', hideScanConfirmation);
-            $('scanModal').addEventListener('click', function(e) {
-                if (e.target === this) hideScanConfirmation();
-            });
+      // ---------------------------------------------------------
+      // 12. EVENT BINDINGS & START
+      // ---------------------------------------------------------
+      function init() {
+        setupTabs();
 
-            // Modal - Save
-            $('modalSaveBtn').addEventListener('click', async function() {
-                const name = $('modalProductName').value.trim();
-                const price = $('modalProductPrice').value.trim();
-                const category = $('modalProductCategory').value;
-                
-                if (!name) {
-                    alert('Please enter a product name.');
-                    return;
-                }
-                if (!price) {
-                    alert('Please enter a price.');
-                    return;
-                }
-                
-                await addEntry(name, price, category);
-                hideScanConfirmation();
-                
-                // Show a brief success feedback
-                const btn = this;
-                const originalText = btn.textContent;
-                btn.textContent = '✅ Saved!';
-                btn.style.background = '#22c55e';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.style.background = '';
-                }, 1500);
-            });
+        // Standard Barcode Scanning
+        $('startScanner').addEventListener('click', initScanner);
+        $('stopScanner').addEventListener('click', stopScanner);
+        $('scanImageBtn').addEventListener('click', function() {
+          const file = $('imageUpload').files[0];
+          if (file) scanImage(file); else alert('Please select an image first.');
+        });
+        
+        // Quick Save (Barcode fallback)
+        $('quickSaveBtn').addEventListener('click', async function() {
+          const name = $('quickName').value.trim();
+          const price = $('quickPrice').value.trim();
+          if (!name || !price) return alert('Please enter product name and price.');
+          await addEntry(name, price, $('quickCategory').value);
+          $('quickName').value = ''; $('quickPrice').value = '';
+          $('quickAddPanel').classList.add('hidden');
+        });
 
-            // Keyboard shortcut: Enter to save from modal
-            $('modalProductPrice').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    $('modalSaveBtn').click();
-                }
-            });
-            $('modalProductName').addEventListener('keydown', function(e) {
-                if (e.key === 'Enter') {
-                    $('modalProductPrice').focus();
-                }
-            });
+        // OCR Scanning & Saving
+        $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
+        $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
+        $('receiptCancelBtn').addEventListener('click', () => {
+            $('receiptResultPanel').classList.add('hidden');
+            window._receiptItems = null;
+        });
 
-            // Manual save
-            $('manualSaveBtn').addEventListener('click', async function() {
-                const name = $('manualName').value.trim();
-                const price = $('manualPrice').value.trim();
-                const cat = $('manualCategory').value;
-                const date = $('manualDate').value || getDefaultDate();
-                if (!name || !price) {
-                    alert('Please enter name and price.');
-                    return;
-                }
-                await addEntry(name, price, cat, date);
-                $('manualName').value = '';
-                $('manualPrice').value = '';
-                $('manualDate').value = '';
-                alert('✅ Entry saved!');
-            });
+        // Manual Panel
+        $('manualSaveBtn').addEventListener('click', async function() {
+          const name = $('manualName').value.trim();
+          const price = $('manualPrice').value.trim();
+          if (!name || !price) return alert('Please enter name and price.');
+          await addEntry(name, price, $('manualCategory').value, $('manualDate').value || getDefaultDate());
+          $('manualName').value = ''; $('manualPrice').value = ''; $('manualDate').value = '';
+          alert('Entry saved!');
+        });
 
-            // Quick bills
-            document.querySelectorAll('[data-bill]').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const bill = this.dataset.bill;
-                    $('manualName').value = bill + ' Bill';
-                    $('manualCategory').value = 'Utilities';
-                    $('manualPrice').focus();
-                    document.querySelector('.tab-btn[data-tab="manual"]').click();
-                });
-            });
+        document.querySelectorAll('[data-bill]').forEach(btn => {
+          btn.addEventListener('click', function() {
+            $('manualName').value = this.dataset.bill + ' Bill';
+            $('manualCategory').value = 'Utilities';
+            $('manualPrice').focus();
+            document.querySelector('.tab-btn[data-tab="manual"]').click();
+          });
+        });
 
-            // Ledger refresh
-            $('refreshLedger').addEventListener('click', refreshAll);
-            $('clearAllBtn').addEventListener('click', clearAllEntries);
+        // Other bindings
+        $('refreshLedger').addEventListener('click', refreshAll);
+        $('clearAllBtn').addEventListener('click', clearAllEntries);
+        $('refreshReports').addEventListener('click', renderReports);
+        $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
+        $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
+        $('exportJson').addEventListener('click', exportJSON);
+        $('importJson').addEventListener('click', () => $('importFileInput').click());
+        $('importFileInput').addEventListener('change', function() {
+          if (this.files.length) { importJSON(this.files[0]); this.value = ''; }
+        });
 
-            // Reports refresh
-            $('refreshReports').addEventListener('click', renderReports);
+        refreshAll();
+      }
 
-            // GitHub sync
-            $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
-            $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
-
-            // Export/Import
-            $('exportJson').addEventListener('click', exportJSON);
-            $('importJson').addEventListener('click', function() {
-                $('importFileInput').click();
-            });
-            $('importFileInput').addEventListener('change', function() {
-                if (this.files.length) {
-                    importJSON(this.files[0]);
-                    this.value = '';
-                }
-            });
-
-            // Load initial data
-            refreshAll();
-        }
-
-        // ---------------------------------------------------------
-        // 15. START
-        // ---------------------------------------------------------
-        document.addEventListener('DOMContentLoaded', init);
+      document.addEventListener('DOMContentLoaded', init);
     })();
-</script>
+  </script>
 </body>
 </html>
