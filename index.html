@@ -123,6 +123,8 @@
         }
         .btn:hover { background: #2563eb; }
         .btn-secondary { background: #e2e8f0; color: #1e293b; }
+        .btn-success { background: #22c55e; color: white; }
+        .btn-success:hover { background: #16a34a; }
         .btn-danger { background: #ef4444; }
 
         /* ===== Scanner ===== */
@@ -167,6 +169,102 @@
         }
         .summary-box .label { font-size: 0.9rem; color: #64748b; }
 
+        /* ===== Scan Confirmation Modal ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-box {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 450px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: modalSlideIn 0.3s ease;
+        }
+        @keyframes modalSlideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-box .modal-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .modal-box .modal-title .badge {
+            background: #3b82f6;
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .modal-box .scanned-data {
+            background: #f1f5f9;
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            font-size: 0.85rem;
+            color: #1e293b;
+        }
+        .modal-box .scanned-data .label {
+            font-size: 0.7rem;
+            color: #64748b;
+            font-family: 'Segoe UI', sans-serif;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .modal-box .form-group {
+            margin-bottom: 14px;
+        }
+        .modal-box .form-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .modal-box .form-group input,
+        .modal-box .form-group select {
+            padding: 10px 12px;
+            font-size: 0.95rem;
+        }
+        .modal-box .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .modal-box .modal-actions button {
+            flex: 1;
+            padding: 12px;
+            font-size: 0.95rem;
+        }
+        .modal-box .modal-actions .btn-cancel {
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .modal-box .modal-actions .btn-cancel:hover {
+            background: #cbd5e1;
+        }
+
         /* ===== Utilities ===== */
         .mt-12 { margin-top: 12px; }
         .mb-12 { margin-bottom: 12px; }
@@ -174,6 +272,8 @@
         .flex .btn { flex: 1; }
         .hidden { display: none; }
         .text-center { text-align: center; }
+        .text-muted { color: #94a3b8; }
+        .text-sm { font-size: 0.85rem; }
     </style>
 </head>
 <body>
@@ -207,7 +307,7 @@
                 <button class="btn btn-secondary" id="stopScanner">⏹ Stop</button>
             </div>
             <p class="text-center mt-12" style="font-size:0.9rem;color:#64748b;">
-                Scan any QR or 2D barcode. Decoded text will be used as product name.
+                Scan any QR or 2D barcode. A confirmation dialog will appear with the scanned data.
             </p>
         </div>
 
@@ -215,28 +315,6 @@
             <div class="card-title">📸 Scan from Image</div>
             <input type="file" id="imageUpload" accept="image/*" />
             <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
-        </div>
-
-        <!-- Quick add after scan -->
-        <div id="quickAddPanel" class="card hidden">
-            <div class="card-title">Add scanned item</div>
-            <label>Product name</label>
-            <input type="text" id="quickName" placeholder="e.g. Milk" />
-            <label>Price (₱)</label>
-            <input type="number" id="quickPrice" placeholder="0.00" step="0.01" />
-            <label>Category</label>
-            <select id="quickCategory">
-                <option value="Groceries">Groceries</option>
-                <option value="Vegetables">Vegetables</option>
-                <option value="Meat">Meat</option>
-                <option value="Dairy">Dairy</option>
-                <option value="Snacks">Snacks</option>
-                <option value="Beverages">Beverages</option>
-                <option value="Household">Household</option>
-                <option value="Utilities">Utilities</option>
-                <option value="Other">Other</option>
-            </select>
-            <button class="btn mt-12" id="quickSaveBtn">💾 Save Entry</button>
         </div>
     </div>
 
@@ -359,6 +437,48 @@
 </div>
 
 <!-- ========================================================== -->
+<!-- SCAN CONFIRMATION MODAL -->
+<!-- ========================================================== -->
+<div class="modal-overlay" id="scanModal">
+    <div class="modal-box">
+        <div class="modal-title">
+            📦 Scanned Item
+            <span class="badge">New</span>
+        </div>
+        <div class="scanned-data">
+            <div class="label">🔍 Decoded Data</div>
+            <div id="scannedRawData">-</div>
+        </div>
+        <div class="form-group">
+            <label for="modalProductName">Product Name</label>
+            <input type="text" id="modalProductName" placeholder="Enter product name..." />
+        </div>
+        <div class="form-group">
+            <label for="modalProductPrice">Price (₱)</label>
+            <input type="number" id="modalProductPrice" placeholder="0.00" step="0.01" />
+        </div>
+        <div class="form-group">
+            <label for="modalProductCategory">Category</label>
+            <select id="modalProductCategory">
+                <option value="Groceries">Groceries</option>
+                <option value="Vegetables">Vegetables</option>
+                <option value="Meat">Meat</option>
+                <option value="Dairy">Dairy</option>
+                <option value="Snacks">Snacks</option>
+                <option value="Beverages">Beverages</option>
+                <option value="Household">Household</option>
+                <option value="Utilities">Utilities</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-cancel" id="modalCancelBtn">Cancel</button>
+            <button class="btn btn-success" id="modalSaveBtn">✅ Save Entry</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================== -->
 <!-- ===== JAVASCRIPT ===== -->
 <!-- ========================================================== -->
 <script>
@@ -380,6 +500,7 @@
         let chartInstance = null;
         let html5QrCode = null;
         let isScannerRunning = false;
+        let lastScannedData = null;
 
         // DOM refs
         const $ = (id) => document.getElementById(id);
@@ -407,7 +528,7 @@
             let end = new Date(now);
             switch (period) {
                 case 'week':
-                    start.setDate(now.getDate() - now.getDay()); // start of week (Sunday)
+                    start.setDate(now.getDate() - now.getDay());
                     break;
                 case 'month':
                     start.setDate(1);
@@ -449,6 +570,7 @@
             };
             await db.entries.add(entry);
             await refreshAll();
+            return entry;
         }
 
         async function deleteEntry(id) {
@@ -481,7 +603,6 @@
                 $('ledgerTotal').textContent = '₱0.00';
                 return;
             }
-            // Sort by date desc, then id desc
             const sorted = [...currentEntries].sort((a,b) => {
                 if (a.date !== b.date) return b.date.localeCompare(a.date);
                 return b.id - a.id;
@@ -504,7 +625,6 @@
             list.innerHTML = html;
             $('ledgerTotal').textContent = formatCurrency(total);
 
-            // Attach delete events
             list.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const id = Number(btn.dataset.id);
@@ -542,7 +662,6 @@
 
             $('reportTotal').textContent = formatCurrency(total);
 
-            // Breakdown text
             const breakdownDiv = $('reportBreakdown');
             let html = '';
             const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
@@ -562,7 +681,6 @@
             }
             breakdownDiv.innerHTML = html;
 
-            // Chart
             if (chartInstance) chartInstance.destroy();
             const ctx = $('categoryChart').getContext('2d');
             const labels = Object.keys(totals);
@@ -624,20 +742,22 @@
                 );
                 isScannerRunning = true;
                 $('startScanner').textContent = '▶ Running';
+                $('startScanner').style.background = '#22c55e';
+                $('startScanner').style.color = 'white';
             } catch (err) {
                 alert('Camera unavailable: ' + err);
             }
         }
 
         function onScanSuccess(decodedText, decodedResult) {
-            // Stop scanner automatically after a successful scan
+            // Stop scanner immediately
             stopScanner();
-            // Fill quick add with the decoded text as product name
-            $('quickName').value = decodedText;
-            $('quickPrice').value = '';
-            $('quickAddPanel').classList.remove('hidden');
-            // Optionally focus price
-            $('quickPrice').focus();
+            
+            // Store the scanned data
+            lastScannedData = decodedText;
+            
+            // Show the confirmation modal
+            showScanConfirmation(decodedText);
         }
 
         function onScanError(err) {
@@ -652,30 +772,50 @@
                 } catch (e) {}
                 isScannerRunning = false;
                 $('startScanner').textContent = '▶ Start Camera';
-                $('quickAddPanel').classList.add('hidden');
+                $('startScanner').style.background = '';
+                $('startScanner').style.color = '';
             }
         }
 
         // ---------------------------------------------------------
-        // 8. IMAGE SCAN (FIXED)
+        // 8. SCAN CONFIRMATION MODAL
+        // ---------------------------------------------------------
+        function showScanConfirmation(scannedData) {
+            const modal = $('scanModal');
+            $('scannedRawData').textContent = scannedData;
+            
+            // Auto-fill the product name with the scanned data
+            $('modalProductName').value = scannedData;
+            $('modalProductPrice').value = '';
+            $('modalProductCategory').value = 'Groceries';
+            
+            modal.classList.add('active');
+            
+            // Focus on price field (since name is auto-filled)
+            setTimeout(() => $('modalProductPrice').focus(), 300);
+        }
+
+        function hideScanConfirmation() {
+            $('scanModal').classList.remove('active');
+            lastScannedData = null;
+        }
+
+        // ---------------------------------------------------------
+        // 9. IMAGE SCAN
         // ---------------------------------------------------------
         async function scanImage(file) {
             if (!file) return;
             
-            // Create a temporary scanner instance for the image
             const tempScanner = new Html5Qrcode('reader');
             
             try {
-                // Use the correct instance method scanFile() for v2.x
                 const result = await tempScanner.scanFile(file, true);
-                $('quickName').value = result;
-                $('quickPrice').value = '';
-                $('quickAddPanel').classList.remove('hidden');
-                $('quickPrice').focus();
+                // Show the confirmation modal with the scanned data
+                lastScannedData = result;
+                showScanConfirmation(result);
             } catch (err) {
                 alert('Could not scan image: ' + err.message);
             } finally {
-                // Clean up the temporary scanner
                 try {
                     await tempScanner.clear();
                 } catch (e) {}
@@ -683,7 +823,7 @@
         }
 
         // ---------------------------------------------------------
-        // 9. GITHUB SYNC
+        // 10. GITHUB SYNC
         // ---------------------------------------------------------
         async function syncToGitHub(push = true) {
             const token = $('githubToken').value.trim();
@@ -703,7 +843,6 @@
                 };
 
                 if (push) {
-                    // GET current file SHA if exists
                     let sha = null;
                     try {
                         const getRes = await fetch(url, { headers });
@@ -713,7 +852,6 @@
                         }
                     } catch (e) {}
 
-                    // Prepare data
                     const entries = await db.entries.toArray();
                     const payload = {
                         message: 'Update Z-Keeper data',
@@ -727,7 +865,6 @@
                     });
                     if (res.ok) {
                         $('syncMessage').textContent = '✅ Push successful!';
-                        // mark all as synced
                         await db.entries.toCollection().modify({ synced: 1 });
                         updateSyncStatus();
                     } else {
@@ -735,7 +872,6 @@
                         $('syncMessage').textContent = '❌ Push failed: ' + err.message;
                     }
                 } else {
-                    // Pull
                     const res = await fetch(url, { headers });
                     if (!res.ok) {
                         if (res.status === 404) {
@@ -749,10 +885,8 @@
                     const data = await res.json();
                     const content = atob(data.content);
                     const remoteEntries = JSON.parse(content);
-                    // Clear local and insert remote entries
                     await db.entries.clear();
                     for (const e of remoteEntries) {
-                        // Remove id to let Dexie auto-increment
                         const { id, ...entry } = e;
                         await db.entries.add(entry);
                     }
@@ -765,7 +899,7 @@
         }
 
         // ---------------------------------------------------------
-        // 10. SYNC STATUS
+        // 11. SYNC STATUS
         // ---------------------------------------------------------
         function updateSyncStatus() {
             const syncedCount = currentEntries.filter(e => e.synced === 1).length;
@@ -781,7 +915,7 @@
         }
 
         // ---------------------------------------------------------
-        // 11. EXPORT / IMPORT JSON
+        // 12. EXPORT / IMPORT JSON
         // ---------------------------------------------------------
         async function exportJSON() {
             const data = await db.entries.toArray();
@@ -816,7 +950,7 @@
         }
 
         // ---------------------------------------------------------
-        // 12. TAB SWITCHING
+        // 13. TAB SWITCHING
         // ---------------------------------------------------------
         function setupTabs() {
             const tabs = document.querySelectorAll('.tab-btn');
@@ -828,19 +962,15 @@
                     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                     document.getElementById(panelId).classList.add('active');
 
-                    // Stop scanner if leaving scan tab
                     if (this.dataset.tab !== 'scan') {
                         stopScanner();
-                    } else {
-                        // auto-start scanner when tab is opened?
-                        // We'll let user click start manually.
                     }
                 });
             });
         }
 
         // ---------------------------------------------------------
-        // 13. EVENT BINDINGS
+        // 14. EVENT BINDINGS
         // ---------------------------------------------------------
         function init() {
             // Tabs
@@ -865,20 +995,51 @@
                 }
             });
 
-            // Quick save
-            $('quickSaveBtn').addEventListener('click', async function() {
-                const name = $('quickName').value.trim();
-                const price = $('quickPrice').value.trim();
-                const cat = $('quickCategory').value;
-                if (!name || !price) {
-                    alert('Please enter product name and price.');
+            // Modal - Cancel
+            $('modalCancelBtn').addEventListener('click', hideScanConfirmation);
+            $('scanModal').addEventListener('click', function(e) {
+                if (e.target === this) hideScanConfirmation();
+            });
+
+            // Modal - Save
+            $('modalSaveBtn').addEventListener('click', async function() {
+                const name = $('modalProductName').value.trim();
+                const price = $('modalProductPrice').value.trim();
+                const category = $('modalProductCategory').value;
+                
+                if (!name) {
+                    alert('Please enter a product name.');
                     return;
                 }
-                await addEntry(name, price, cat);
-                $('quickName').value = '';
-                $('quickPrice').value = '';
-                $('quickAddPanel').classList.add('hidden');
-                // re-enable scanner? User can start again.
+                if (!price) {
+                    alert('Please enter a price.');
+                    return;
+                }
+                
+                await addEntry(name, price, category);
+                hideScanConfirmation();
+                
+                // Show a brief success feedback
+                const btn = this;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Saved!';
+                btn.style.background = '#22c55e';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '';
+                }, 1500);
+            });
+
+            // Keyboard shortcut: Enter to save from modal
+            $('modalProductPrice').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    $('modalSaveBtn').click();
+                }
+            });
+            $('modalProductName').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    $('modalProductPrice').focus();
+                }
             });
 
             // Manual save
@@ -895,8 +1056,7 @@
                 $('manualName').value = '';
                 $('manualPrice').value = '';
                 $('manualDate').value = '';
-                // Show feedback
-                alert('Entry saved!');
+                alert('✅ Entry saved!');
             });
 
             // Quick bills
@@ -906,7 +1066,6 @@
                     $('manualName').value = bill + ' Bill';
                     $('manualCategory').value = 'Utilities';
                     $('manualPrice').focus();
-                    // Switch to manual tab
                     document.querySelector('.tab-btn[data-tab="manual"]').click();
                 });
             });
@@ -939,10 +1098,10 @@
         }
 
         // ---------------------------------------------------------
-        // 14. START
+        // 15. START
         // ---------------------------------------------------------
         document.addEventListener('DOMContentLoaded', init);
     })();
 </script>
 </body>
-              </html>
+</html>
