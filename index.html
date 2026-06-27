@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#3b82f6" />
   <title>Z-Keeper – Family Budget</title>
-  
+
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
 
@@ -50,10 +50,10 @@
     /* ===== Entries ===== */
     .entry-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
     .entry-item .info { flex: 1; }
-    .entry-item .name { font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .entry-item .name { font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .entry-item .meta { font-size: 0.8rem; color: #94a3b8; }
-    .entry-item .price { font-weight: 700; color: #0f172a; }
-    .entry-item .delete-btn { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; padding-left: 12px;}
+    .entry-item .price { font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 4px; }
+    .entry-item .delete-btn { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; padding-left: 12px; }
     .summary-box { background: #f1f5f9; border-radius: 12px; padding: 12px; text-align: center; }
     .summary-box .amount { font-size: 2rem; font-weight: 700; color: #0f172a; }
     .summary-box .label { font-size: 0.9rem; color: #64748b; }
@@ -64,8 +64,28 @@
     .flex .btn { flex: 1; }
     .hidden { display: none !important; }
     .text-center { text-align: center; }
-    .view-image-btn { cursor: pointer; padding: 2px 6px; background: #e2e8f0; border-radius: 6px; font-size: 0.75rem; border: none; }
+    .view-image-btn { cursor: pointer; padding: 2px 8px; background: #e2e8f0; border-radius: 6px; font-size: 0.75rem; border: none; transition: 0.2s; }
     .view-image-btn:hover { background: #cbd5e1; }
+    /* ===== Image Viewer Modal ===== */
+    #imageViewerOverlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6); z-index: 99; backdrop-filter: blur(2px);
+    }
+    #imageViewerModal {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 100; max-height: 90vh; width: 90%; max-width: 400px;
+      overflow: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      background: white; border-radius: 16px; padding: 16px; margin: 0;
+    }
+    #imageViewerModal .modal-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+    }
+    #imageViewerModal .modal-header .card-title { margin: 0; }
+    #imageViewerModal .close-btn {
+      background: #e2e8f0; border: none; border-radius: 8px; padding: 4px 12px; font-weight: bold; cursor: pointer;
+    }
+    #imageViewerModal .close-btn:hover { background: #cbd5e1; }
+    #viewerImage { width: 100%; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
   </style>
 </head>
 <body>
@@ -101,13 +121,13 @@
         <div class="card-title">📸 Scan from Image</div>
         <input type="file" id="imageUpload" accept="image/*" />
         <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
-        
+
         <button class="btn btn-secondary mt-12" id="scanReceiptBtn">🧾 Scan Receipt (OCR)</button>
         <div id="receiptProgress" style="display:none; margin-top:12px;">
-            <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
-                <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
-            </div>
-            <p id="ocrStatusText" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
+          <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
+            <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
+          </div>
+          <p id="ocrStatusText" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
         </div>
       </div>
 
@@ -135,12 +155,12 @@
       <div id="receiptResultPanel" class="card hidden">
         <div class="card-title">🧾 Receipt Data Found</div>
         <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:400px;overflow-y:auto;">
-            <div id="receiptDataDisplay">Waiting for scan...</div>
-            
-            <div id="editableReceiptItemsContainer" style="display:none; margin-top:12px; border-top:1px solid #e2e8f0; padding-top:12px;">
-                <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
-                <div id="editableReceiptItems"></div>
-            </div>
+          <div id="receiptDataDisplay">Waiting for scan...</div>
+
+          <div id="editableReceiptItemsContainer" style="display:none; margin-top:12px; border-top:1px solid #e2e8f0; padding-top:12px;">
+            <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
+            <div id="editableReceiptItems"></div>
+          </div>
         </div>
 
         <label>Store / Receipt Name</label>
@@ -162,7 +182,6 @@
         <button class="btn mt-12" id="receiptSaveBtn">💾 Save Receipt Items</button>
         <button class="btn btn-secondary mt-12" id="receiptCancelBtn">Cancel</button>
       </div>
-
     </div>
 
     <div id="panel-manual" class="panel">
@@ -239,7 +258,7 @@
     </div>
 
     <div id="panel-settings" class="panel">
-      
+
       <div class="card">
         <div class="card-title">⚙️ App Preferences</div>
         <label>Currency Symbol</label>
@@ -254,10 +273,10 @@
       <div class="card">
         <div class="card-title">🧠 Offline OCR Engine</div>
         <p style="font-size:0.9rem; color:#475569;">
-            Status: <strong id="ocrReadyIndicator">Checking cache...</strong>
+          Status: <strong id="ocrReadyIndicator">Checking cache...</strong>
         </p>
         <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">
-            The engine requires ~5MB of data to be downloaded once. Afterwards, receipt scanning works 100% offline via Service Worker.
+          The engine requires ~5MB of data to be downloaded once. Afterwards, receipt scanning works 100% offline via Service Worker.
         </p>
       </div>
 
@@ -276,8 +295,8 @@
         <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
         <hr style="margin:16px 0;border-color:#e2e8f0;" />
         <div class="flex">
-            <button class="btn btn-secondary" id="exportJson">📥 JSON</button>
-            <button class="btn btn-secondary" id="exportCsv">📄 CSV</button>
+          <button class="btn btn-secondary" id="exportJson">📥 JSON</button>
+          <button class="btn btn-secondary" id="exportCsv">📄 CSV</button>
         </div>
         <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON</button>
         <input type="file" id="importFileInput" accept=".json" style="display:none;" />
@@ -285,13 +304,14 @@
     </div>
   </div>
 
-  <div id="imageViewerOverlay" class="hidden" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:99; backdrop-filter:blur(2px);"></div>
-  <div id="imageViewerModal" class="card hidden" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:100; max-height:90vh; width:90%; max-width:400px; overflow:auto; box-shadow:0 10px 25px rgba(0,0,0,0.3); margin:0;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-          <div class="card-title" style="margin:0;">🧾 Scanned Receipt</div>
-          <button class="btn-secondary" id="closeImageViewer" style="width:auto; padding:4px 12px; border:none; font-weight:bold;">✕</button>
-      </div>
-      <img id="viewerImage" src="" style="width:100%; height:auto; border-radius:8px; border:1px solid #e2e8f0;" />
+  <!-- ===== Image Viewer Modal ===== -->
+  <div id="imageViewerOverlay" class="hidden"></div>
+  <div id="imageViewerModal" class="hidden">
+    <div class="modal-header">
+      <div class="card-title">🧾 Scanned Receipt</div>
+      <button class="close-btn" id="closeImageViewer">✕</button>
+    </div>
+    <img id="viewerImage" src="" alt="Receipt image" />
   </div>
 
   <script>
@@ -303,7 +323,7 @@
       // ---------------------------------------------------------
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed: ', err));
+          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration failed: ', err));
         });
       }
 
@@ -329,111 +349,155 @@
 
       function getCurrencySymbol() { return localStorage.getItem('zk_currency') || '₱'; }
       function formatCurrency(amount) { return getCurrencySymbol() + Number(amount).toFixed(2); }
-      function getDefaultDate() { return new Date().toISOString().slice(0,10); }
+      function getDefaultDate() { return new Date().toISOString().slice(0, 10); }
 
       function getDateRange(period) {
-        const now = new Date(); let start = new Date(now); let end = new Date(now);
+        const now = new Date();
+        let start = new Date(now);
+        let end = new Date(now);
         switch (period) {
-          case 'week': start.setDate(now.getDate() - now.getDay()); break;
-          case 'month': start.setDate(1); break;
-          case 'quarter': start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1); break;
-          case 'year': start.setMonth(0, 1); break;
-          default: start = new Date(0);
+          case 'week':
+            start.setDate(now.getDate() - now.getDay());
+            break;
+          case 'month':
+            start.setDate(1);
+            break;
+          case 'quarter':
+            start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+            break;
+          case 'year':
+            start.setMonth(0, 1);
+            break;
+          default:
+            start = new Date(0);
         }
-        start.setHours(0,0,0,0); end.setHours(23,59,59,999);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
         return { start, end };
       }
 
       function escapeHtml(text) {
-        const div = document.createElement('div'); div.textContent = text; return div.innerHTML;
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
       }
 
       // ---------------------------------------------------------
       // 3. CORE CRUD
       // ---------------------------------------------------------
-      async function loadEntries() { return currentEntries = await db.entries.toArray(); }
+      async function loadEntries() {
+        currentEntries = await db.entries.toArray();
+        return currentEntries;
+      }
 
-      async function addEntry(name, price, category, date, type='expense', imageBase64=null) {
+      async function addEntry(name, price, category, date, type = 'expense', imageBase64 = null) {
         if (!name || !price) return;
         await db.entries.add({
-          name: name.trim(), 
-          price: parseFloat(price), 
+          name: name.trim(),
+          price: parseFloat(price),
           category: category || 'Other',
-          date: date || getDefaultDate(), 
-          type: type, 
-          synced: 0, 
-          receiptImage: imageBase64, 
+          date: date || getDefaultDate(),
+          type: type,
+          synced: 0,
+          receiptImage: imageBase64,
           createdAt: new Date().toISOString()
         });
         await refreshAll();
       }
 
-      async function deleteEntry(id) { await db.entries.delete(id); await refreshAll(); }
+      async function deleteEntry(id) {
+        await db.entries.delete(id);
+        await refreshAll();
+      }
+
       async function clearAllEntries() {
         if (!confirm('Delete ALL entries?')) return;
-        await db.entries.clear(); await refreshAll();
+        await db.entries.clear();
+        await refreshAll();
       }
 
       // ---------------------------------------------------------
       // 4. UI REFRESH
       // ---------------------------------------------------------
       async function refreshAll() {
-        await loadEntries(); renderLedger(); renderReports(); renderUtilitySummary(); updateSyncStatus();
+        await loadEntries();
+        renderLedger();
+        renderReports();
+        renderUtilitySummary();
+        updateSyncStatus();
       }
 
       function renderLedger() {
-        const list = $('ledgerList'); if (!list) return;
+        const list = $('ledgerList');
+        if (!list) return;
         if (currentEntries.length === 0) {
           list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
-          $('ledgerTotal').textContent = formatCurrency(0); return;
+          $('ledgerTotal').textContent = formatCurrency(0);
+          return;
         }
 
-        const sorted = [...currentEntries].sort((a,b) => a.date !== b.date ? b.date.localeCompare(a.date) : b.id - a.id);
-        let html = ''; let total = 0;
-        
+        const sorted = [...currentEntries].sort((a, b) =>
+          a.date !== b.date ? b.date.localeCompare(a.date) : b.id - a.id
+        );
+        let html = '';
+        let total = 0;
+
         sorted.forEach(e => {
           total += e.price;
-          // Render a button to view the receipt if image exists
-          const imageIcon = e.receiptImage ? `<button class="view-image-btn" data-id="${e.id}" title="View Receipt">🖼️</button>` : '';
-          
+          const imageIcon = e.receiptImage ?
+            `<button class="view-image-btn" data-id="${e.id}" title="View Receipt">🖼️</button>` :
+            '';
           html += `
             <div class="entry-item">
               <div class="info">
                 <div class="name">${escapeHtml(e.name)} ${imageIcon}</div>
                 <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
               </div>
-              <div class="price" style="display:flex; align-items:center;">
-                  ${formatCurrency(e.price)}
-                  <button class="delete-btn" data-id="${e.id}">✕</button>
+              <div class="price">
+                ${formatCurrency(e.price)}
+                <button class="delete-btn" data-id="${e.id}">✕</button>
               </div>
             </div>`;
         });
-        
-        list.innerHTML = html; $('ledgerTotal').textContent = formatCurrency(total);
+
+        list.innerHTML = html;
+        $('ledgerTotal').textContent = formatCurrency(total);
       }
 
       function renderReports() {
-        const period = $('reportPeriod').value; const { start, end } = getDateRange(period);
+        const period = $('reportPeriod').value;
+        const { start, end } = getDateRange(period);
         const filtered = currentEntries.filter(e => new Date(e.date) >= start && new Date(e.date) <= end);
-        const totals = {}; let total = 0;
-        
+        const totals = {};
+        let total = 0;
+
         filtered.forEach(e => {
           const cat = e.category || 'Other';
-          totals[cat] = (totals[cat] || 0) + e.price; total += e.price;
+          totals[cat] = (totals[cat] || 0) + e.price;
+          total += e.price;
         });
-        
+
         $('reportTotal').textContent = formatCurrency(total);
-        const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
-        
-        $('reportBreakdown').innerHTML = sortedCats.length === 0 ? '<p style="color:#94a3b8;text-align:center;">No data.</p>' : 
-          sortedCats.map(cat => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;"><span>${escapeHtml(cat)}</span><span><strong>${formatCurrency(totals[cat])}</strong> (${((totals[cat] / total) * 100).toFixed(1)}%)</span></div>`).join('');
+        const sortedCats = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+
+        $('reportBreakdown').innerHTML = sortedCats.length === 0 ?
+          '<p style="color:#94a3b8;text-align:center;">No data.</p>' :
+          sortedCats.map(cat =>
+            `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+              <span>${escapeHtml(cat)}</span>
+              <span><strong>${formatCurrency(totals[cat])}</strong> (${((totals[cat] / total) * 100).toFixed(1)}%)</span>
+            </div>`
+          ).join('');
 
         if (chartInstance) chartInstance.destroy();
         chartInstance = new Chart($('categoryChart').getContext('2d'), {
           type: 'doughnut',
           data: {
             labels: sortedCats.length ? sortedCats : ['No Data'],
-            datasets: [{ data: sortedCats.length ? Object.values(totals) : [1], backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b'] }]
+            datasets: [{
+              data: sortedCats.length ? Object.values(totals) : [1],
+              backgroundColor: ['#3b82f6', '#f97316', '#8b5cf6', '#22c55e', '#ef4444', '#eab308', '#06b6d4', '#ec4899', '#64748b']
+            }]
           },
           options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
         });
@@ -442,217 +506,304 @@
       function renderUtilitySummary() {
         const utilEntries = currentEntries.filter(e => e.category === 'Utilities');
         $('utilitySummary').innerHTML = `
-          <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Total</span><strong>${formatCurrency(utilEntries.reduce((s,e) => s + e.price, 0))}</strong></div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;"><span>Count</span><strong>${utilEntries.length}</strong></div>`;
+          <div style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span>Total</span>
+            <strong>${formatCurrency(utilEntries.reduce((s, e) => s + e.price, 0))}</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;">
+            <span>Count</span>
+            <strong>${utilEntries.length}</strong>
+          </div>`;
       }
 
       // ---------------------------------------------------------
       // 5. RECEIPT OCR MODULE & HYBRID LOGIC
       // ---------------------------------------------------------
       const RECEIPT_CONFIG = {
-          tessLanguage: 'fil+eng', 
-          tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
-          get mindee() { return { apiKey: localStorage.getItem('zk_mindee') || '', endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict' }; },
-          get structOcr() { return { apiKey: localStorage.getItem('zk_struct') || '', endpoint: 'https://api.structocr.com/v1/ocr' }; }
+        tessLanguage: 'fil+eng',
+        tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
+        get mindee() {
+          return {
+            apiKey: localStorage.getItem('zk_mindee') || '',
+            endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict'
+          };
+        },
+        get structOcr() {
+          return {
+            apiKey: localStorage.getItem('zk_struct') || '',
+            endpoint: 'https://api.structocr.com/v1/ocr'
+          };
+        }
       };
 
       class ReceiptParser {
-          static parse(rawText) {
-              const cleanText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ').replace(/\s+/g, ' ').trim();
-              const lines = cleanText.split('\n').filter(line => line.trim().length > 0);
-              const result = { storeName: this.extractStoreName(lines, cleanText), date: this.extractDate(cleanText), total: this.extractTotal(cleanText), items: this.extractItems(lines, cleanText), rawText: rawText, confidence: 0 };
-              result.confidence = Math.min(100, (result.storeName?20:0) + (result.date?20:0) + (result.total?25:0) + Math.min(35, result.items.length * 5));
-              return result;
-          }
+        static parse(rawText) {
+          const cleanText = rawText
+            .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+            .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
+            .replace(/\s+/g, ' ').trim();
+          const lines = cleanText.split('\n').filter(line => line.trim().length > 0);
+          const result = {
+            storeName: this.extractStoreName(lines, cleanText),
+            date: this.extractDate(cleanText),
+            total: this.extractTotal(cleanText),
+            items: this.extractItems(lines, cleanText),
+            rawText: rawText,
+            confidence: 0
+          };
+          result.confidence = Math.min(100,
+            (result.storeName ? 20 : 0) +
+            (result.date ? 20 : 0) +
+            (result.total ? 25 : 0) +
+            Math.min(35, result.items.length * 5)
+          );
+          return result;
+        }
 
-          static extractStoreName(lines, full) {
-              const matches = [/^([A-Z][A-Z\s&']{2,})$/m, /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i, /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i];
-              for (const p of matches) { const m = full.match(p); if (m) return m[1] || m[0]; }
-              return lines.slice(0,5).find(l => l === l.toUpperCase() && l.length > 3 && l.length < 40) || null;
+        static extractStoreName(lines, full) {
+          const matches = [
+            /^([A-Z][A-Z\s&']{2,})$/m,
+            /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i,
+            /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i
+          ];
+          for (const p of matches) {
+            const m = full.match(p);
+            if (m) return m[1] || m[0];
           }
+          return lines.slice(0, 5).find(l => l === l.toUpperCase() && l.length > 3 && l.length < 40) || null;
+        }
 
-          static extractDate(t) {
-              const m = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/) || t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
-              if(!m) return null;
-              try { return new Date(m[0]).toISOString().slice(0,10); } catch(e) { return null; }
-          }
+        static extractDate(t) {
+          const m = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/) ||
+            t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
+          if (!m) return null;
+          try { return new Date(m[0]).toISOString().slice(0, 10); } catch (e) { return null; }
+        }
 
-          static extractTotal(t) {
-              const m = t.match(/(?:TOTAL|AMOUNT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i) || t.match(/[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
-              return m ? parseFloat(m[1].replace(/,/g, '')) : null;
-          }
+        static extractTotal(t) {
+          const m = t.match(/(?:TOTAL|AMOUNT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i) ||
+            t.match(/[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+          return m ? parseFloat(m[1].replace(/,/g, '')) : null;
+        }
 
-          static extractItems(lines, fullText) {
-              const items = [];
-              for (let i = 0; i < lines.length; i++) {
-                  if (['TOTAL', 'TAX', 'CASH', 'TIN'].some(k => lines[i].toUpperCase().includes(k))) continue;
-                  const priceMatch = lines[i].match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
-                  if (priceMatch) {
-                      const name = lines[i].replace(priceMatch[0], '').replace(/^(\d{6,}|\w{6,})/, '').trim();
-                      if (name) items.push({ name: name, price: parseFloat(priceMatch[1].replace(/,/g, '')) });
-                  }
-              }
-              return items;
+        static extractItems(lines, fullText) {
+          const items = [];
+          for (let i = 0; i < lines.length; i++) {
+            if (['TOTAL', 'TAX', 'CASH', 'TIN'].some(k => lines[i].toUpperCase().includes(k))) continue;
+            const priceMatch = lines[i].match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+            if (priceMatch) {
+              const name = lines[i].replace(priceMatch[0], '').replace(/^(\d{6,}|\w{6,})/, '').trim();
+              if (name) items.push({ name: name, price: parseFloat(priceMatch[1].replace(/,/g, '')) });
+            }
           }
+          return items;
+        }
       }
 
       class ReceiptOCR {
-          static isOnline() { return navigator.onLine; }
+        static isOnline() { return navigator.onLine; }
 
-          /**
-           * Compresses an image file natively via HTML5 Canvas before converting to Base64.
-           * Prevents IndexedDB bloat and drastically speeds up online API uploads.
-           */
-          static imageToBase64(image) {
-              return new Promise((resolve, reject) => {
-                  if (typeof image === 'string') { resolve(image); return; }
-                  
-                  const reader = new FileReader();
-                  reader.onload = (event) => {
-                      const img = new Image();
-                      img.onload = () => {
-                          const maxWidth = 800;
-                          let width = img.width;
-                          let height = img.height;
-                          
-                          // Downscale if wider than 800px
-                          if (width > maxWidth) {
-                              height = Math.round((height * maxWidth) / width);
-                              width = maxWidth;
-                          }
-                          
-                          const canvas = document.createElement('canvas');
-                          canvas.width = width;
-                          canvas.height = height;
-                          const ctx = canvas.getContext('2d');
-                          ctx.drawImage(img, 0, 0, width, height);
-                          
-                          // Convert to JPEG at 70% quality to save space
-                          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                          resolve(compressedDataUrl.split(',')[1]);
-                      };
-                      // Fallback if image manipulation fails
-                      img.onerror = () => resolve(reader.result.split(',')[1]);
-                      img.src = event.target.result;
-                  };
-                  reader.onerror = reject;
-                  reader.readAsDataURL(image);
-              });
-          }
+        /**
+         * Compresses an image file to base64 (JPEG, 800px width, quality 0.7)
+         */
+        static imageToBase64(image) {
+          return new Promise((resolve, reject) => {
+            if (typeof image === 'string') { resolve(image); return; }
 
-          static async scan(base64Image, options = {}, progressCb = () => {}) {
-              const useOnline = this.isOnline() && options.preferOnline !== false;
-              
-              if (useOnline && (RECEIPT_CONFIG.mindee.apiKey || RECEIPT_CONFIG.structOcr.apiKey)) {
-                  try {
-                      progressCb('Calling Online API...', 40); 
-                      return await this.scanWithMindee(base64Image);
-                  } catch (e) {
-                      console.warn('Online APIs failed or missing keys, falling back to Tesseract.');
-                      return await this.scanWithTesseract(base64Image, progressCb);
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const img = new Image();
+              img.onload = () => {
+                const maxWidth = 800;
+                let width = img.width;
+                let height = img.height;
+                if (width > maxWidth) {
+                  height = Math.round((height * maxWidth) / width);
+                  width = maxWidth;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                resolve(compressedDataUrl.split(',')[1]);
+              };
+              img.onerror = () => resolve(reader.result.split(',')[1]);
+              img.src = event.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(image);
+          });
+        }
+
+        static async scan(base64Image, options = {}, progressCb = () => {}) {
+          const useOnline = this.isOnline() && options.preferOnline !== false;
+
+          if (useOnline && (RECEIPT_CONFIG.mindee.apiKey || RECEIPT_CONFIG.structOcr.apiKey)) {
+            try {
+              progressCb('Calling Online API...', 40);
+              // Try Mindee first, fallback to StructOCR if available
+              if (RECEIPT_CONFIG.mindee.apiKey) {
+                try {
+                  return await this.scanWithMindee(base64Image);
+                } catch (e) {
+                  console.warn('Mindee failed, trying StructOCR if available.');
+                  if (RECEIPT_CONFIG.structOcr.apiKey) {
+                    return await this.scanWithStructOCR(base64Image);
                   }
+                  throw e;
+                }
+              } else if (RECEIPT_CONFIG.structOcr.apiKey) {
+                return await this.scanWithStructOCR(base64Image);
               } else {
-                  if (!ocrCachedAndReady && !useOnline) {
-                      throw new Error("You are offline and OCR data hasn't been cached yet.");
-                  }
-                  return await this.scanWithTesseract(base64Image, progressCb);
+                throw new Error('No online API keys configured.');
               }
+            } catch (e) {
+              console.warn('Online APIs failed, falling back to Tesseract.', e);
+              return await this.scanWithTesseract(base64Image, progressCb);
+            }
+          } else {
+            if (!ocrCachedAndReady && !useOnline) {
+              throw new Error("You are offline and OCR data hasn't been cached yet. Please connect to the internet once to download the engine.");
+            }
+            return await this.scanWithTesseract(base64Image, progressCb);
           }
+        }
 
-          static async scanWithTesseract(base64Image, progressCb) {
-              try {
-                  progressCb('Loading Tesseract.js (Offline)...', 30);
-                  // Tesseract can accept a base64 string directly if formatted correctly, or an image element.
-                  // Easiest is to format as a data URI:
-                  const dataUri = `data:image/jpeg;base64,${base64Image}`;
-                  
-                  const result = await Tesseract.recognize(dataUri, RECEIPT_CONFIG.tessLanguage, {
-                      logger: m => { if (m.status === 'recognizing text') progressCb('Recognizing text...', 30 + (m.progress * 60)); }
-                  });
-                  const parsed = ReceiptParser.parse(result.data.text);
-                  parsed.scanMethod = 'offline (Tesseract)';
-                  return parsed;
-              } catch (error) { throw error; }
-          }
+        static async scanWithTesseract(base64Image, progressCb) {
+          try {
+            progressCb('Loading Tesseract.js (Offline)...', 30);
+            const dataUri = `data:image/jpeg;base64,${base64Image}`;
+            const result = await Tesseract.recognize(dataUri, RECEIPT_CONFIG.tessLanguage, {
+              logger: m => {
+                if (m.status === 'recognizing text') {
+                  progressCb('Recognizing text...', 30 + (m.progress * 60));
+                }
+              }
+            });
+            const parsed = ReceiptParser.parse(result.data.text);
+            parsed.scanMethod = 'offline (Tesseract)';
+            return parsed;
+          } catch (error) { throw error; }
+        }
 
-          static async scanWithMindee(base64Image) {
-              const apiKey = RECEIPT_CONFIG.mindee.apiKey;
-              if (!apiKey) throw new Error('Mindee API key not configured');
-              
-              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, { 
-                  method: 'POST', 
-                  headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' }, 
-                  body: JSON.stringify({ document: base64Image }) 
-              });
-              if (!response.ok) throw new Error('API Error');
-              
-              const data = await response.json();
-              const pred = data.document?.inference?.prediction || {};
-              return { storeName: pred.supplier?.value || null, date: pred.date?.value || null, total: pred.total_amount?.value || null, items: (pred.line_items || []).map(i => ({ name: i.description || '', price: i.total_amount?.value || null })), confidence: 100, scanMethod: 'online (Mindee)' };
-          }
+        static async scanWithMindee(base64Image) {
+          const apiKey = RECEIPT_CONFIG.mindee.apiKey;
+          if (!apiKey) throw new Error('Mindee API key not configured');
+          const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, {
+            method: 'POST',
+            headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ document: base64Image })
+          });
+          if (!response.ok) throw new Error('Mindee API error: ' + response.status);
+          const data = await response.json();
+          const pred = data.document?.inference?.prediction || {};
+          return {
+            storeName: pred.supplier?.value || null,
+            date: pred.date?.value || null,
+            total: pred.total_amount?.value || null,
+            items: (pred.line_items || []).map(i => ({ name: i.description || '', price: i.total_amount?.value || null })),
+            confidence: 100,
+            scanMethod: 'online (Mindee)'
+          };
+        }
+
+        static async scanWithStructOCR(base64Image) {
+          const apiKey = RECEIPT_CONFIG.structOcr.apiKey;
+          if (!apiKey) throw new Error('StructOCR API key not configured');
+          const response = await fetch(RECEIPT_CONFIG.structOcr.endpoint, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image, parser: 'receipt' })
+          });
+          if (!response.ok) throw new Error('StructOCR API error: ' + response.status);
+          const data = await response.json();
+          // Adapt depending on actual StructOCR response structure
+          return {
+            storeName: data.merchant_name || null,
+            date: data.date || null,
+            total: data.total || null,
+            items: (data.items || []).map(i => ({ name: i.name || '', price: i.price || null })),
+            confidence: 100,
+            scanMethod: 'online (StructOCR)'
+          };
+        }
       }
 
       // ---------------------------------------------------------
       // 6. BACKGROUND TESSERACT WARM-UP (For Service Worker)
       // ---------------------------------------------------------
       async function warmUpTesseract() {
-          const indicator = $('ocrReadyIndicator');
-          try {
-              indicator.textContent = '⏳ Downloading OCR Data (5MB)...';
-              indicator.style.color = '#eab308';
+        const indicator = $('ocrReadyIndicator');
+        try {
+          indicator.textContent = '⏳ Downloading OCR Data (5MB)...';
+          indicator.style.color = '#eab308';
 
-              const dummyCanvas = document.createElement('canvas');
-              dummyCanvas.width = 2; dummyCanvas.height = 2;
-              const ctx = dummyCanvas.getContext('2d');
-              ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 2, 2);
-              ctx.fillStyle = 'black'; ctx.font = '1px sans-serif'; ctx.fillText('A', 0, 1);
+          const dummyCanvas = document.createElement('canvas');
+          dummyCanvas.width = 2;
+          dummyCanvas.height = 2;
+          const ctx = dummyCanvas.getContext('2d');
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, 2, 2);
+          ctx.fillStyle = 'black';
+          ctx.font = '1px sans-serif';
+          ctx.fillText('A', 0, 1);
 
-              await Tesseract.recognize(dummyCanvas, RECEIPT_CONFIG.tessLanguage, {
-                  logger: m => {
-                      if (m.status === 'loading language traineddata') {
-                          indicator.textContent = `⏳ Caching Engine: ${Math.round(m.progress * 100)}%`;
-                      }
-                  }
-              });
-
-              ocrCachedAndReady = true;
-              indicator.textContent = '✅ Ready (Offline Capable)';
-              indicator.style.color = '#22c55e';
-          } catch (e) {
-              ocrCachedAndReady = false;
-              if (navigator.onLine) {
-                  indicator.textContent = '⚠️ Engine failed to load. Will retry on scan.';
-                  indicator.style.color = '#f97316';
-              } else {
-                  indicator.textContent = '❌ Offline. Go online once to download engine.';
-                  indicator.style.color = '#ef4444';
+          await Tesseract.recognize(dummyCanvas, RECEIPT_CONFIG.tessLanguage, {
+            logger: m => {
+              if (m.status === 'loading language traineddata') {
+                indicator.textContent = `⏳ Caching Engine: ${Math.round(m.progress * 100)}%`;
               }
+            }
+          });
+
+          ocrCachedAndReady = true;
+          indicator.textContent = '✅ Ready (Offline Capable)';
+          indicator.style.color = '#22c55e';
+        } catch (e) {
+          ocrCachedAndReady = false;
+          if (navigator.onLine) {
+            indicator.textContent = '⚠️ Engine failed to load. Will retry on scan.';
+            indicator.style.color = '#f97316';
+          } else {
+            indicator.textContent = '❌ Offline. Go online once to download engine.';
+            indicator.style.color = '#ef4444';
           }
+        }
       }
 
       // ---------------------------------------------------------
       // 7. SCANNER UI HANDLERS
       // ---------------------------------------------------------
       function onScanSuccess(decodedText) {
-          stopScanner();
-          $('quickName').value = decodedText;
-          $('quickPrice').value = '';
-          $('quickAddPanel').classList.remove('hidden');
-          $('receiptResultPanel').classList.add('hidden');
-          $('quickPrice').focus();
+        stopScanner();
+        $('quickName').value = decodedText;
+        $('quickPrice').value = '';
+        $('quickAddPanel').classList.remove('hidden');
+        $('receiptResultPanel').classList.add('hidden');
+        $('quickPrice').focus();
       }
 
       async function initScanner() {
-        if (html5QrCode) { await html5QrCode.stop(); html5QrCode.clear(); }
+        if (html5QrCode) { await html5QrCode.stop();
+          html5QrCode.clear(); }
         html5QrCode = new Html5Qrcode("reader");
         try {
           await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, onScanSuccess, () => {});
-          isScannerRunning = true; $('startScanner').textContent = '▶ Running';
+          isScannerRunning = true;
+          $('startScanner').textContent = '▶ Running';
         } catch (err) { alert('Camera unavailable: ' + err); }
       }
 
       async function stopScanner() {
-        if (html5QrCode && isScannerRunning) { try { await html5QrCode.stop(); html5QrCode.clear(); } catch(e){} isScannerRunning = false; $('startScanner').textContent = '▶ Start Camera'; $('quickAddPanel').classList.add('hidden'); }
+        if (html5QrCode && isScannerRunning) {
+          try { await html5QrCode.stop();
+            html5QrCode.clear(); } catch (e) {}
+          isScannerRunning = false;
+          $('startScanner').textContent = '▶ Start Camera';
+          $('quickAddPanel').classList.add('hidden');
+        }
       }
 
       async function scanImage(file) {
@@ -660,168 +811,232 @@
         const tempScanner = new Html5Qrcode('reader');
         try {
           const result = await tempScanner.scanFile(file, true);
-          $('quickName').value = result; $('quickPrice').value = ''; $('quickAddPanel').classList.remove('hidden'); $('receiptResultPanel').classList.add('hidden'); $('quickPrice').focus();
-        } catch (err) { 
+          $('quickName').value = result;
+          $('quickPrice').value = '';
+          $('quickAddPanel').classList.remove('hidden');
+          $('receiptResultPanel').classList.add('hidden');
+          $('quickPrice').focus();
+        } catch (err) {
           const useOcr = confirm('No barcode detected. Would you like to scan this as a receipt using OCR?');
           if (useOcr) await handleReceiptScan();
-        } finally { try { await tempScanner.clear(); } catch(e){} }
+        } finally { try { await tempScanner.clear(); } catch (e) {} }
       }
 
       async function handleReceiptScan() {
-          const fileInput = $('imageUpload');
-          if (!fileInput.files.length) return alert('Please select a receipt image first.');
+        const fileInput = $('imageUpload');
+        if (!fileInput.files.length) return alert('Please select a receipt image first.');
 
-          const file = fileInput.files[0];
-          const progressDiv = $('receiptProgress'); const progressBar = $('ocrProgressBar'); const statusText = $('ocrStatusText');
-          const updateProgress = (status, percent) => { statusText.textContent = status; progressBar.style.width = percent + '%'; };
+        const file = fileInput.files[0];
+        const progressDiv = $('receiptProgress');
+        const progressBar = $('ocrProgressBar');
+        const statusText = $('ocrStatusText');
+        const updateProgress = (status, percent) => {
+          statusText.textContent = status;
+          progressBar.style.width = percent + '%';
+        };
 
-          try {
-              $('quickAddPanel').classList.add('hidden');
-              progressDiv.style.display = 'block'; 
-              
-              updateProgress('Compressing Image...', 5);
-              // Extract and massively compress the image first
-              const compressedBase64 = await ReceiptOCR.imageToBase64(file);
-              window._currentReceiptImageBase64 = compressedBase64;
-              
-              updateProgress('Initializing OCR...', 15);
-              // Pass the compressed string, saving huge bandwidth on API calls
-              const result = await ReceiptOCR.scan(compressedBase64, { preferOnline: true }, updateProgress);
-              
-              updateProgress('Parsing receipt data...', 90);
-              await new Promise(resolve => setTimeout(resolve, 50)); 
-              
-              showReceiptConfirmation(result);
-              
-              updateProgress('Done!', 100);
-              setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
-          } catch (error) {
-              alert(error.message); progressDiv.style.display = 'none';
-          }
+        try {
+          $('quickAddPanel').classList.add('hidden');
+          progressDiv.style.display = 'block';
+
+          updateProgress('Compressing Image...', 5);
+          const compressedBase64 = await ReceiptOCR.imageToBase64(file);
+          window._currentReceiptImageBase64 = compressedBase64;
+
+          updateProgress('Initializing OCR...', 15);
+          const result = await ReceiptOCR.scan(compressedBase64, { preferOnline: true }, updateProgress);
+
+          updateProgress('Parsing receipt data...', 90);
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          showReceiptConfirmation(result);
+
+          updateProgress('Done!', 100);
+          setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
+        } catch (error) {
+          alert(error.message);
+          progressDiv.style.display = 'none';
+        }
       }
 
       function showReceiptConfirmation(r) {
-          const itemsHtml = (r.items || []).map((i, idx) => `
-              <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
-                  <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
-                  <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
-                  <button class="btn btn-danger remove-item-btn" style="padding:8px; width:auto;">✕</button>
-              </div>
+        const itemsHtml = (r.items || []).map((i, idx) => `
+            <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
+                <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
+                <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
+                <button class="btn btn-danger remove-item-btn" style="padding:8px; width:auto;">✕</button>
+            </div>
           `).join('');
 
-          $('receiptDataDisplay').innerHTML = `
-              <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
-              <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
-              <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
-              <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
+        $('receiptDataDisplay').innerHTML = `
+            <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
+            <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
+            <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
+            <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
 
-          const itemsContainer = $('editableReceiptItemsContainer');
-          const itemsList = $('editableReceiptItems');
-          
-          if (r.items && r.items.length > 0) {
-              itemsList.innerHTML = itemsHtml;
-              itemsContainer.style.display = 'block';
-          } else {
-              itemsList.innerHTML = '';
-              itemsContainer.style.display = 'none';
-          }
+        const itemsContainer = $('editableReceiptItemsContainer');
+        const itemsList = $('editableReceiptItems');
 
-          $('receiptStoreName').value = r.storeName || 'Store Receipt'; 
-          $('receiptTotal').value = r.total || '0.00'; 
-          $('receiptResultPanel').classList.remove('hidden'); 
-          $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
+        if (r.items && r.items.length > 0) {
+          itemsList.innerHTML = itemsHtml;
+          itemsContainer.style.display = 'block';
+        } else {
+          itemsList.innerHTML = '';
+          itemsContainer.style.display = 'none';
+        }
+
+        $('receiptStoreName').value = r.storeName || 'Store Receipt';
+        $('receiptTotal').value = r.total || '0.00';
+        $('receiptResultPanel').classList.remove('hidden');
+        $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
       }
 
       async function saveReceiptItems() {
-          const category = $('receiptCategory').value;
-          const editableItemsContainer = $('editableReceiptItems');
-          const savedImage = window._currentReceiptImageBase64 || null;
-          let addedCount = 0;
+        const category = $('receiptCategory').value;
+        const editableItemsContainer = $('editableReceiptItems');
+        const savedImage = window._currentReceiptImageBase64 || null;
+        let addedCount = 0;
 
-          if (editableItemsContainer && editableItemsContainer.children.length > 0) {
-              for (let i = 0; i < editableItemsContainer.children.length; i++) {
-                  const row = editableItemsContainer.children[i];
-                  const nameInput = row.querySelector('.edit-item-name');
-                  const priceInput = row.querySelector('.edit-item-price');
-                  if (nameInput && priceInput) {
-                      const name = nameInput.value.trim();
-                      const price = priceInput.value.trim();
-                      if (name && price) {
-                          // To save space, we only attach the image to the first parsed item from this receipt
-                          const imgToAttach = (i === 0) ? savedImage : null;
-                          await addEntry(name, price, category, getDefaultDate(), 'expense', imgToAttach);
-                          addedCount++;
-                      }
-                  }
+        if (editableItemsContainer && editableItemsContainer.children.length > 0) {
+          for (let i = 0; i < editableItemsContainer.children.length; i++) {
+            const row = editableItemsContainer.children[i];
+            const nameInput = row.querySelector('.edit-item-name');
+            const priceInput = row.querySelector('.edit-item-price');
+            if (nameInput && priceInput) {
+              const name = nameInput.value.trim();
+              const price = priceInput.value.trim();
+              if (name && price) {
+                // Attach image only to the first item to save space
+                const imgToAttach = (i === 0) ? savedImage : null;
+                await addEntry(name, price, category, getDefaultDate(), 'expense', imgToAttach);
+                addedCount++;
               }
-              $('receiptResultPanel').classList.add('hidden');
-              alert(`✅ Added ${addedCount} items from receipt!`);
-              await refreshAll();
-          } else {
-              const fallbackName = $('receiptStoreName').value.trim();
-              const fallbackPrice = $('receiptTotal').value.trim();
-              if (!fallbackName || !fallbackPrice) {
-                  alert('Please ensure there is a store name and total price if no items were found.');
-                  return;
-              }
-              await addEntry(fallbackName, fallbackPrice, category, getDefaultDate(), 'expense', savedImage);
-              $('receiptResultPanel').classList.add('hidden');
-              alert('✅ Receipt saved as a single entry!');
-              await refreshAll();
+            }
           }
-          window._currentReceiptImageBase64 = null; // Clear from memory
+          $('receiptResultPanel').classList.add('hidden');
+          alert(`✅ Added ${addedCount} items from receipt!`);
+          await refreshAll();
+        } else {
+          const fallbackName = $('receiptStoreName').value.trim();
+          const fallbackPrice = $('receiptTotal').value.trim();
+          if (!fallbackName || !fallbackPrice) {
+            alert('Please ensure there is a store name and total price if no items were found.');
+            return;
+          }
+          await addEntry(fallbackName, fallbackPrice, category, getDefaultDate(), 'expense', savedImage);
+          $('receiptResultPanel').classList.add('hidden');
+          alert('✅ Receipt saved as a single entry!');
+          await refreshAll();
+        }
+        window._currentReceiptImageBase64 = null;
       }
 
       // ---------------------------------------------------------
       // 8. GITHUB SYNC, EXPORT & SETTINGS
       // ---------------------------------------------------------
       async function syncToGitHub(push = true) {
-        const token = $('githubToken').value.trim(); const repo = $('githubRepo').value.trim(); const file = $('githubFile').value.trim();
+        const token = $('githubToken').value.trim();
+        const repo = $('githubRepo').value.trim();
+        const file = $('githubFile').value.trim();
         if (!token || !repo || !file) return $('syncMessage').textContent = '⚠️ Fill all fields.';
         $('syncMessage').textContent = '⏳ Syncing...';
         try {
           const url = `https://api.github.com/repos/${repo}/contents/${file}`;
           const headers = { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' };
-          
+
           if (push) {
-            let sha = null; try { const getRes = await fetch(url, { headers }); if (getRes.ok) sha = (await getRes.json()).sha; } catch(e){}
-            const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ message: 'Update Z-Keeper data', content: btoa(JSON.stringify(await db.entries.toArray(), null, 2)), sha }) });
-            if (res.ok) { $('syncMessage').textContent = '✅ Push successful!'; await db.entries.toCollection().modify({ synced: 1 }); updateSyncStatus(); } 
-            else $('syncMessage').textContent = '❌ Push failed.';
+            let sha = null;
+            try {
+              const getRes = await fetch(url, { headers });
+              if (getRes.ok) sha = (await getRes.json()).sha;
+            } catch (e) {}
+            const res = await fetch(url, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({
+                message: 'Update Z-Keeper data',
+                content: btoa(JSON.stringify(await db.entries.toArray(), null, 2)),
+                sha
+              })
+            });
+            if (res.ok) {
+              $('syncMessage').textContent = '✅ Push successful!';
+              await db.entries.toCollection().modify({ synced: 1 });
+              updateSyncStatus();
+            } else $('syncMessage').textContent = '❌ Push failed.';
           } else {
             const res = await fetch(url, { headers });
             if (!res.ok) return $('syncMessage').textContent = '❌ Pull failed.';
             const remoteEntries = JSON.parse(atob((await res.json()).content));
-            await db.entries.clear(); for (const e of remoteEntries) { const { id, ...entry } = e; await db.entries.add(entry); }
-            $('syncMessage').textContent = '✅ Pull successful!'; await refreshAll();
+            await db.entries.clear();
+            for (const e of remoteEntries) {
+              const { id, ...entry } = e;
+              await db.entries.add(entry);
+            }
+            $('syncMessage').textContent = '✅ Pull successful!';
+            await refreshAll();
           }
         } catch (err) { $('syncMessage').textContent = '❌ Error: ' + err.message; }
       }
 
       function exportToCSV() {
-          if (!currentEntries.length) return alert('No data to export.');
-          // Does not include the binary receiptImage data in the CSV deliberately to prevent file corruption
-          let csv = 'ID,Name,Price,Category,Date,Type\n';
-          currentEntries.forEach(e => {
-              const safeName = `"${(e.name || '').replace(/"/g, '""')}"`;
-              csv += `${e.id},${safeName},${e.price},${e.category},${e.date},${e.type}\n`;
-          });
-          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = 'zkeeper-export.csv'; a.click();
-          URL.revokeObjectURL(url);
+        if (!currentEntries.length) return alert('No data to export.');
+        let csv = 'ID,Name,Price,Category,Date,Type\n';
+        currentEntries.forEach(e => {
+          const safeName = `"${(e.name || '').replace(/"/g, '""')}"`;
+          csv += `${e.id},${safeName},${e.price},${e.category},${e.date},${e.type}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'zkeeper-export.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      async function exportJSON() {
+        const data = await db.entries.toArray();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'zkeeper-backup.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function importJSON(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+          try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error('Invalid format');
+            await db.entries.clear();
+            for (const entry of data) {
+              const { id, ...clean } = entry;
+              await db.entries.add(clean);
+            }
+            alert('✅ Import successful!');
+            await refreshAll();
+          } catch (err) {
+            alert('❌ Import failed: ' + err.message);
+          }
+        };
+        reader.readAsText(file);
       }
 
       function updateSyncStatus() {
-        const synced = currentEntries.filter(e => e.synced === 1).length; const total = currentEntries.length;
+        const synced = currentEntries.filter(e => e.synced === 1).length;
+        const total = currentEntries.length;
         $('syncStatus').textContent = total === 0 ? '● empty' : synced === total ? '✓ synced' : `⚠ ${total - synced} unsynced`;
       }
 
       function loadPreferences() {
-          $('prefCurrency').value = localStorage.getItem('zk_currency') || '₱';
-          $('prefMindee').value = localStorage.getItem('zk_mindee') || '';
-          $('prefStruct').value = localStorage.getItem('zk_struct') || '';
+        $('prefCurrency').value = localStorage.getItem('zk_currency') || '₱';
+        $('prefMindee').value = localStorage.getItem('zk_mindee') || '';
+        $('prefStruct').value = localStorage.getItem('zk_struct') || '';
       }
 
       // ---------------------------------------------------------
@@ -829,87 +1044,132 @@
       // ---------------------------------------------------------
       function init() {
         // Tab routing
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', function() {
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); this.classList.add('active');
-          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active')); $('panel-' + this.dataset.tab).classList.add('active');
-          if (this.dataset.tab !== 'scan') stopScanner();
-        }));
+        document.querySelectorAll('.tab-btn').forEach(btn =>
+          btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            $('panel-' + this.dataset.tab).classList.add('active');
+            if (this.dataset.tab !== 'scan') stopScanner();
+          })
+        );
 
         // Hardware scanners
-        $('startScanner').addEventListener('click', initScanner); 
+        $('startScanner').addEventListener('click', initScanner);
         $('stopScanner').addEventListener('click', stopScanner);
-        $('scanImageBtn').addEventListener('click', () => { const f = $('imageUpload').files[0]; if(f) scanImage(f); else alert('Select image'); });
-        
+        $('scanImageBtn').addEventListener('click', () => {
+          const f = $('imageUpload').files[0];
+          if (f) scanImage(f);
+          else alert('Select image');
+        });
+
         // Receipt Scans
         $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
         $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
         $('receiptCancelBtn').addEventListener('click', () => {
-            $('receiptResultPanel').classList.add('hidden');
-            window._currentReceiptImageBase64 = null; // Clear on cancel
+          $('receiptResultPanel').classList.add('hidden');
+          window._currentReceiptImageBase64 = null;
         });
 
         // Event Delegation for dynamically generated receipt row deletion (CSP Safe)
         $('scannedRawData').addEventListener('click', function(e) {
-            if (e.target.classList.contains('remove-item-btn')) {
-                const row = e.target.closest('.receipt-item-row');
-                if (row) row.remove();
-            }
+          if (e.target.classList.contains('remove-item-btn')) {
+            const row = e.target.closest('.receipt-item-row');
+            if (row) row.remove();
+          }
         });
 
-        // Event Delegation for Image Viewer in Ledger
+        // Event Delegation for Image Viewer & Delete in Ledger
         $('ledgerList').addEventListener('click', async function(e) {
-            const btn = e.target.closest('.view-image-btn');
-            if (btn) {
-                const id = Number(btn.dataset.id);
-                const entry = await db.entries.get(id);
-                if (entry && entry.receiptImage) {
-                    $('viewerImage').src = 'data:image/jpeg;base64,' + entry.receiptImage;
-                    $('imageViewerModal').classList.remove('hidden');
-                    $('imageViewerOverlay').classList.remove('hidden');
-                }
-            } else if (e.target.classList.contains('delete-btn')) {
-                // Keep delete functionality intact here since we modified innerHTML of ledger list earlier
-                const id = Number(e.target.dataset.id);
-                await deleteEntry(id);
+          const btn = e.target.closest('.view-image-btn');
+          if (btn) {
+            const id = Number(btn.dataset.id);
+            const entry = await db.entries.get(id);
+            if (entry && entry.receiptImage) {
+              $('viewerImage').src = 'data:image/jpeg;base64,' + entry.receiptImage;
+              $('imageViewerModal').classList.remove('hidden');
+              $('imageViewerOverlay').classList.remove('hidden');
             }
+          } else if (e.target.classList.contains('delete-btn')) {
+            const id = Number(e.target.dataset.id);
+            await deleteEntry(id);
+          }
         });
 
         // Close Image Viewer
         const closeViewer = () => {
-            $('imageViewerModal').classList.add('hidden');
-            $('imageViewerOverlay').classList.add('hidden');
-            $('viewerImage').src = '';
+          $('imageViewerModal').classList.add('hidden');
+          $('imageViewerOverlay').classList.add('hidden');
+          $('viewerImage').src = '';
         };
         $('closeImageViewer').addEventListener('click', closeViewer);
         $('imageViewerOverlay').addEventListener('click', closeViewer);
 
+        // Keyboard shortcut: Escape to close viewer
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape') {
+            if (!$('imageViewerModal').classList.contains('hidden')) {
+              closeViewer();
+            }
+          }
+        });
+
         // Manual adding logic
-        $('quickSaveBtn').addEventListener('click', async () => { await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value); $('quickAddPanel').classList.add('hidden'); });
-        $('manualSaveBtn').addEventListener('click', async () => { await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate').value); $('manualName').value=''; $('manualPrice').value=''; alert('Saved!'); });
-        document.querySelectorAll('[data-bill]').forEach(btn => btn.addEventListener('click', function() { $('manualName').value = this.dataset.bill + ' Bill'; $('manualCategory').value = 'Utilities'; document.querySelector('.tab-btn[data-tab="manual"]').click(); }));
+        $('quickSaveBtn').addEventListener('click', async () => {
+          await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value);
+          $('quickAddPanel').classList.add('hidden');
+        });
+        $('manualSaveBtn').addEventListener('click', async () => {
+          await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate')
+            .value);
+          $('manualName').value = '';
+          $('manualPrice').value = '';
+          alert('Saved!');
+        });
+        document.querySelectorAll('[data-bill]').forEach(btn =>
+          btn.addEventListener('click', function() {
+            $('manualName').value = this.dataset.bill + ' Bill';
+            $('manualCategory').value = 'Utilities';
+            document.querySelector('.tab-btn[data-tab="manual"]').click();
+          })
+        );
 
         // UI refresh and sync logic
-        $('refreshLedger').addEventListener('click', refreshAll); 
+        $('refreshLedger').addEventListener('click', refreshAll);
         $('clearAllBtn').addEventListener('click', clearAllEntries);
         $('refreshReports').addEventListener('click', renderReports);
-        $('syncPushBtn').addEventListener('click', () => syncToGitHub(true)); 
+        $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
         $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
-        
+
         // Settings & Exports
         $('savePreferencesBtn').addEventListener('click', () => {
-            localStorage.setItem('zk_currency', $('prefCurrency').value.trim() || '₱');
-            localStorage.setItem('zk_mindee', $('prefMindee').value.trim());
-            localStorage.setItem('zk_struct', $('prefStruct').value.trim());
-            alert('Preferences saved!');
-            refreshAll(); // Reloads currency formatting immediately
+          localStorage.setItem('zk_currency', $('prefCurrency').value.trim() || '₱');
+          localStorage.setItem('zk_mindee', $('prefMindee').value.trim());
+          localStorage.setItem('zk_struct', $('prefStruct').value.trim());
+          alert('Preferences saved!');
+          refreshAll();
         });
+
+        // JSON Export
+        $('exportJson').addEventListener('click', exportJSON);
+
+        // JSON Import
+        $('importJson').addEventListener('click', () => $('importFileInput').click());
+        $('importFileInput').addEventListener('change', function() {
+          if (this.files.length) {
+            importJSON(this.files[0]);
+            this.value = '';
+          }
+        });
+
+        // CSV Export
         $('exportCsv').addEventListener('click', exportToCSV);
 
         loadPreferences();
         refreshAll();
-        
+
         if (navigator.onLine) {
-            warmUpTesseract();
+          warmUpTesseract();
         }
       }
 
