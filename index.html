@@ -130,6 +130,11 @@
         <div class="card-title">🧾 Receipt Data Found</div>
         <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:400px;overflow-y:auto;">
             <div id="receiptDataDisplay">Waiting for scan...</div>
+            
+            <div id="editableReceiptItemsContainer" style="display:none; margin-top:12px; border-top:1px solid #e2e8f0; padding-top:12px;">
+                <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
+                <div id="editableReceiptItems"></div>
+            </div>
         </div>
 
         <label>Store / Receipt Name</label>
@@ -594,11 +599,17 @@
 
           try {
               $('quickAddPanel').classList.add('hidden');
-              progressDiv.style.display = 'block'; updateProgress('Initializing...', 10);
+              progressDiv.style.display = 'block'; 
+              updateProgress('Initializing...', 10);
+              
               const result = await ReceiptOCR.scan(fileInput.files[0], { preferOnline: true }, updateProgress);
               
-              updateProgress('Parsing...', 95);
+              updateProgress('Parsing receipt data...', 90);
+              // Give the UI a micro-tick to render the 90% state before blocking the main thread 
+              await new Promise(resolve => setTimeout(resolve, 50)); 
+              
               showReceiptConfirmation(result);
+              
               updateProgress('Done!', 100);
               setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
           } catch (error) {
@@ -607,30 +618,38 @@
       }
 
       function showReceiptConfirmation(r) {
-          // Generates an editable UI for the receipt items
+          // CSP Compliant: Generate HTML without inline onclick
           const itemsHtml = (r.items || []).map((i, idx) => `
               <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
                   <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
                   <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
-                  <button class="btn btn-danger" onclick="this.parentElement.remove()" style="padding:8px; width:auto;">✕</button>
+                  <button class="btn btn-danger remove-item-btn" style="padding:8px; width:auto;">✕</button>
               </div>
           `).join('');
 
+          // Update the static receipt display element
           $('receiptDataDisplay').innerHTML = `
               <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
               <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
               <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
-              
-              ${r.items?.length > 0 ? `
-              <div style="margin-top:12px;border-top:1px solid #e2e8f0;padding-top:12px;">
-                  <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
-                  <div id="editableReceiptItems">${itemsHtml}</div>
-              </div>` : ''}
-              
               <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
 
-          $('receiptStoreName').value = r.storeName || 'Store Receipt'; $('receiptTotal').value = r.total || ''; 
-          $('receiptResultPanel').classList.remove('hidden'); $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
+          // Check if there are items and render into our predefined container
+          const itemsContainer = $('editableReceiptItemsContainer');
+          const itemsList = $('editableReceiptItems');
+          
+          if (r.items && r.items.length > 0) {
+              itemsList.innerHTML = itemsHtml;
+              itemsContainer.style.display = 'block';
+          } else {
+              itemsList.innerHTML = '';
+              itemsContainer.style.display = 'none';
+          }
+
+          $('receiptStoreName').value = r.storeName || 'Store Receipt'; 
+          $('receiptTotal').value = r.total || ''; 
+          $('receiptResultPanel').classList.remove('hidden'); 
+          $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
       }
 
       async function saveReceiptItems() {
@@ -707,25 +726,37 @@
       // 9. BINDINGS & INIT
       // ---------------------------------------------------------
       function init() {
+        // Tab routing
         document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', function() {
           document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); this.classList.add('active');
           document.querySelectorAll('.panel').forEach(p => p.classList.remove('active')); $('panel-' + this.dataset.tab).classList.add('active');
           if (this.dataset.tab !== 'scan') stopScanner();
         }));
 
+        // Hardware scanners
         $('startScanner').addEventListener('click', initScanner); 
         $('stopScanner').addEventListener('click', stopScanner);
         $('scanImageBtn').addEventListener('click', () => { const f = $('imageUpload').files[0]; if(f) scanImage(f); else alert('Select image'); });
+        
+        // Receipt Scans
         $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
-        
-        $('quickSaveBtn').addEventListener('click', async () => { await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value); $('quickAddPanel').classList.add('hidden'); });
-        $('manualSaveBtn').addEventListener('click', async () => { await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate').value); $('manualName').value=''; $('manualPrice').value=''; alert('Saved!'); });
-        
         $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
         $('receiptCancelBtn').addEventListener('click', () => $('receiptResultPanel').classList.add('hidden'));
 
+        // Event Delegation for dynamically generated receipt row deletion (CSP Safe)
+        $('scannedRawData').addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-item-btn')) {
+                const row = e.target.closest('.receipt-item-row');
+                if (row) row.remove();
+            }
+        });
+
+        // Manual adding logic
+        $('quickSaveBtn').addEventListener('click', async () => { await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value); $('quickAddPanel').classList.add('hidden'); });
+        $('manualSaveBtn').addEventListener('click', async () => { await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate').value); $('manualName').value=''; $('manualPrice').value=''; alert('Saved!'); });
         document.querySelectorAll('[data-bill]').forEach(btn => btn.addEventListener('click', function() { $('manualName').value = this.dataset.bill + ' Bill'; $('manualCategory').value = 'Utilities'; document.querySelector('.tab-btn[data-tab="manual"]').click(); }));
 
+        // UI refresh and sync logic
         $('refreshLedger').addEventListener('click', refreshAll); 
         $('clearAllBtn').addEventListener('click', clearAllEntries);
         $('refreshReports').addEventListener('click', renderReports);
