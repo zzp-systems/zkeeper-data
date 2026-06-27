@@ -101,7 +101,7 @@
             <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
                 <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
             </div>
-            <p id="ocrStatus" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
+            <p id="ocrStatusText" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
         </div>
       </div>
 
@@ -128,7 +128,7 @@
 
       <div id="receiptResultPanel" class="card hidden">
         <div class="card-title">🧾 Receipt Data Found</div>
-        <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:300px;overflow-y:auto;">
+        <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:400px;overflow-y:auto;">
             <div id="receiptDataDisplay">Waiting for scan...</div>
         </div>
 
@@ -184,9 +184,6 @@
           <button class="btn btn-secondary" data-bill="Internet">🌐 Internet</button>
           <button class="btn btn-secondary" data-bill="Water">💧 Water</button>
         </div>
-        <p style="font-size:0.8rem;color:#64748b;margin-top:8px;">
-          Clicking will open manual form with category "Utilities".
-        </p>
       </div>
     </div>
 
@@ -225,12 +222,22 @@
         <div id="reportBreakdown" style="margin-top:12px;"></div>
       </div>
       <div class="card">
-        <div class="card-title">🏠 Utility Bills (separate)</div>
+        <div class="card-title">🏠 Utility Bills</div>
         <div id="utilitySummary">Loading...</div>
       </div>
     </div>
 
     <div id="panel-settings" class="panel">
+      <div class="card">
+        <div class="card-title">🧠 Offline OCR Engine</div>
+        <p style="font-size:0.9rem; color:#475569;">
+            Status: <strong id="ocrReadyIndicator">Checking cache...</strong>
+        </p>
+        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">
+            The engine requires ~5MB of data to be downloaded once. Afterwards, receipt scanning works 100% offline via Service Worker.
+        </p>
+      </div>
+
       <div class="card">
         <div class="card-title">☁️ GitHub Sync</div>
         <label>GitHub Token</label>
@@ -240,29 +247,34 @@
         <label>Filename (e.g. data.json)</label>
         <input type="text" id="githubFile" value="zkeeper-data.json" />
         <div class="flex mt-12">
-          <button class="btn" id="syncPushBtn">⬆ Push to GitHub</button>
-          <button class="btn btn-secondary" id="syncPullBtn">⬇ Pull from GitHub</button>
+          <button class="btn" id="syncPushBtn">⬆ Push</button>
+          <button class="btn btn-secondary" id="syncPullBtn">⬇ Pull</button>
         </div>
         <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
         <hr style="margin:16px 0;border-color:#e2e8f0;" />
-        <button class="btn btn-secondary" id="exportJson">📥 Export JSON (backup)</button>
-        <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON (restore)</button>
+        <button class="btn btn-secondary" id="exportJson">📥 Export JSON</button>
+        <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON</button>
         <input type="file" id="importFileInput" accept=".json" style="display:none;" />
       </div>
-      <div class="card">
-        <div class="card-title">📱 About</div>
-        <p style="color:#64748b;font-size:0.9rem;">
-          Z‑Keeper v1.0 — All data stored locally in your browser (IndexedDB).<br />
-          Sync to GitHub for backup & family sharing.
-        </p>
-      </div>
     </div>
-
   </div>
 
   <script>
     (function() {
       'use strict';
+
+      // ---------------------------------------------------------
+      // 0. SERVICE WORKER REGISTRATION
+      // ---------------------------------------------------------
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').then(registration => {
+            console.log('ServiceWorker registration successful');
+          }).catch(err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
 
       // ---------------------------------------------------------
       // 1. DATABASE (Dexie)
@@ -279,199 +291,104 @@
       let chartInstance = null;
       let html5QrCode = null;
       let isScannerRunning = false;
+      let ocrCachedAndReady = false;
 
       const $ = (id) => document.getElementById(id);
       const $$ = (sel) => document.querySelectorAll(sel);
 
-      function formatDate(d) {
-        const date = new Date(d);
-        return date.toISOString().slice(0,10);
-      }
-
-      function formatCurrency(amount) {
-        return '₱' + Number(amount).toFixed(2);
-      }
-
-      function getDefaultDate() {
-        return new Date().toISOString().slice(0,10);
-      }
+      function formatCurrency(amount) { return '₱' + Number(amount).toFixed(2); }
+      function getDefaultDate() { return new Date().toISOString().slice(0,10); }
 
       function getDateRange(period) {
-        const now = new Date();
-        let start = new Date(now);
-        let end = new Date(now);
+        const now = new Date(); let start = new Date(now); let end = new Date(now);
         switch (period) {
-          case 'week':
-            start.setDate(now.getDate() - now.getDay()); 
-            break;
-          case 'month':
-            start.setDate(1);
-            break;
-          case 'quarter':
-            const month = now.getMonth();
-            const quarterStartMonth = Math.floor(month / 3) * 3;
-            start.setMonth(quarterStartMonth, 1);
-            break;
-          case 'year':
-            start.setMonth(0, 1);
-            break;
-          default:
-            start = new Date(0);
+          case 'week': start.setDate(now.getDate() - now.getDay()); break;
+          case 'month': start.setDate(1); break;
+          case 'quarter': start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1); break;
+          case 'year': start.setMonth(0, 1); break;
+          default: start = new Date(0);
         }
-        start.setHours(0,0,0,0);
-        end.setHours(23,59,59,999);
+        start.setHours(0,0,0,0); end.setHours(23,59,59,999);
         return { start, end };
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div'); div.textContent = text; return div.innerHTML;
       }
 
       // ---------------------------------------------------------
       // 3. CORE CRUD
       // ---------------------------------------------------------
-      async function loadEntries() {
-        currentEntries = await db.entries.toArray();
-        return currentEntries;
-      }
+      async function loadEntries() { return currentEntries = await db.entries.toArray(); }
 
       async function addEntry(name, price, category, date, type='expense') {
         if (!name || !price) return;
-        const entry = {
-          name: name.trim(),
-          price: parseFloat(price),
-          category: category || 'Other',
-          date: date || getDefaultDate(),
-          type: type,
-          synced: 0,
-          createdAt: new Date().toISOString()
-        };
-        await db.entries.add(entry);
+        await db.entries.add({
+          name: name.trim(), price: parseFloat(price), category: category || 'Other',
+          date: date || getDefaultDate(), type: type, synced: 0, createdAt: new Date().toISOString()
+        });
         await refreshAll();
       }
 
-      async function deleteEntry(id) {
-        await db.entries.delete(id);
-        await refreshAll();
-      }
-
+      async function deleteEntry(id) { await db.entries.delete(id); await refreshAll(); }
       async function clearAllEntries() {
-        if (!confirm('Delete ALL entries permanently?')) return;
-        await db.entries.clear();
-        await refreshAll();
+        if (!confirm('Delete ALL entries?')) return;
+        await db.entries.clear(); await refreshAll();
       }
 
       // ---------------------------------------------------------
       // 4. UI REFRESH
       // ---------------------------------------------------------
       async function refreshAll() {
-        await loadEntries();
-        renderLedger();
-        renderReports();
-        renderUtilitySummary();
-        updateSyncStatus();
+        await loadEntries(); renderLedger(); renderReports(); renderUtilitySummary(); updateSyncStatus();
       }
 
       function renderLedger() {
-        const list = $('ledgerList');
-        if (!list) return;
-
+        const list = $('ledgerList'); if (!list) return;
         if (currentEntries.length === 0) {
           list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
-          $('ledgerTotal').textContent = '₱0.00';
-          return;
+          $('ledgerTotal').textContent = '₱0.00'; return;
         }
 
-        const sorted = [...currentEntries].sort((a,b) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          return b.id - a.id;
-        });
-
-        let html = '';
-        let total = 0;
+        const sorted = [...currentEntries].sort((a,b) => a.date !== b.date ? b.date.localeCompare(a.date) : b.id - a.id);
+        let html = ''; let total = 0;
+        
         sorted.forEach(e => {
           total += e.price;
           html += `
             <div class="entry-item">
-              <div class="info">
-                <div class="name">${escapeHtml(e.name)}</div>
-                <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
-              </div>
+              <div class="info"><div class="name">${escapeHtml(e.name)}</div><div class="meta">${e.date} · ${escapeHtml(e.category)}</div></div>
               <div class="price">${formatCurrency(e.price)}</div>
               <button class="delete-btn" data-id="${e.id}">✕</button>
-            </div>
-          `;
+            </div>`;
         });
         
-        list.innerHTML = html;
-        $('ledgerTotal').textContent = formatCurrency(total);
-
-        list.querySelectorAll('.delete-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const id = Number(btn.dataset.id);
-            await deleteEntry(id);
-          });
-        });
-      }
-
-      function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-      }
-
-      // ---------------------------------------------------------
-      // 5. REPORTS & CHARTS
-      // ---------------------------------------------------------
-      function getCategoryBreakdown(entries, start, end) {
-        const filtered = entries.filter(e => {
-          const d = new Date(e.date);
-          return d >= start && d <= end;
-        });
-        const totals = {};
-        filtered.forEach(e => {
-          const cat = e.category || 'Other';
-          totals[cat] = (totals[cat] || 0) + e.price;
-        });
-        return { filtered, totals, total: filtered.reduce((s,e) => s + e.price, 0) };
+        list.innerHTML = html; $('ledgerTotal').textContent = formatCurrency(total);
+        list.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async () => await deleteEntry(Number(btn.dataset.id))));
       }
 
       function renderReports() {
-        const period = $('reportPeriod').value;
-        const { start, end } = getDateRange(period);
-        const { filtered, totals, total } = getCategoryBreakdown(currentEntries, start, end);
+        const period = $('reportPeriod').value; const { start, end } = getDateRange(period);
+        const filtered = currentEntries.filter(e => new Date(e.date) >= start && new Date(e.date) <= end);
+        const totals = {}; let total = 0;
+        
+        filtered.forEach(e => {
+          const cat = e.category || 'Other';
+          totals[cat] = (totals[cat] || 0) + e.price; total += e.price;
+        });
         
         $('reportTotal').textContent = formatCurrency(total);
-
-        const breakdownDiv = $('reportBreakdown');
-        let html = '';
         const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
         
-        if (sortedCats.length === 0) {
-          html = '<p style="color:#94a3b8;text-align:center;">No data for this period.</p>';
-        } else {
-          sortedCats.forEach(cat => {
-            const amount = totals[cat];
-            const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : 0;
-            html += `
-              <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
-                <span>${escapeHtml(cat)}</span>
-                <span><strong>${formatCurrency(amount)}</strong> (${pct}%)</span>
-              </div>
-            `;
-          });
-        }
-        breakdownDiv.innerHTML = html;
+        $('reportBreakdown').innerHTML = sortedCats.length === 0 ? '<p style="color:#94a3b8;text-align:center;">No data.</p>' : 
+          sortedCats.map(cat => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;"><span>${escapeHtml(cat)}</span><span><strong>${formatCurrency(totals[cat])}</strong> (${((totals[cat] / total) * 100).toFixed(1)}%)</span></div>`).join('');
 
         if (chartInstance) chartInstance.destroy();
-        const ctx = $('categoryChart').getContext('2d');
-        const labels = Object.keys(totals);
-        const data = Object.values(totals);
-        
-        chartInstance = new Chart(ctx, {
+        chartInstance = new Chart($('categoryChart').getContext('2d'), {
           type: 'doughnut',
           data: {
-            labels: labels.length ? labels : ['No Data'],
-            datasets: [{
-              data: labels.length ? data : [1],
-              backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b']
-            }]
+            labels: sortedCats.length ? sortedCats : ['No Data'],
+            datasets: [{ data: sortedCats.length ? Object.values(totals) : [1], backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b'] }]
           },
           options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
         });
@@ -479,182 +396,58 @@
 
       function renderUtilitySummary() {
         const utilEntries = currentEntries.filter(e => e.category === 'Utilities');
-        const total = utilEntries.reduce((s,e) => s + e.price, 0);
-        const count = utilEntries.length;
-        
         $('utilitySummary').innerHTML = `
-          <div style="display:flex;justify-content:space-between;padding:8px 0;">
-            <span>Total Utilities</span>
-            <strong>${formatCurrency(total)}</strong>
-          </div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;">
-            <span>Number of bills</span>
-            <strong>${count}</strong>
-          </div>
-        `;
+          <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Total</span><strong>${formatCurrency(utilEntries.reduce((s,e) => s + e.price, 0))}</strong></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;"><span>Count</span><strong>${utilEntries.length}</strong></div>`;
       }
 
       // ---------------------------------------------------------
-      // 6. RECEIPT OCR MODULE & CONFIG
+      // 5. RECEIPT OCR MODULE & HYBRID LOGIC
       // ---------------------------------------------------------
       const RECEIPT_CONFIG = {
-          tessLanguage: 'fil+eng', // Filipino + English
+          tessLanguage: 'fil+eng', 
           tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
-          mindee: {
-              apiKey: 'YOUR_MINDEE_API_KEY',
-              endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict'
-          },
-          structOcr: {
-              apiKey: 'YOUR_STRUCTOCR_API_KEY',
-              endpoint: 'https://api.structocr.com/v1/ocr'
-          }
+          mindee: { apiKey: 'YOUR_MINDEE_API_KEY', endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict' },
+          structOcr: { apiKey: 'YOUR_STRUCTOCR_API_KEY', endpoint: 'https://api.structocr.com/v1/ocr' }
       };
 
       class ReceiptParser {
           static parse(rawText) {
-              const result = { storeName: null, date: null, total: null, items: [], rawText: rawText, confidence: 0 };
-              const cleanText = this.cleanText(rawText);
+              const cleanText = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ').replace(/\s+/g, ' ').trim();
               const lines = cleanText.split('\n').filter(line => line.trim().length > 0);
-              
-              result.storeName = this.extractStoreName(lines, cleanText);
-              result.date = this.extractDate(cleanText);
-              result.total = this.extractTotal(cleanText);
-              result.items = this.extractItems(lines, cleanText);
-              result.confidence = this.calculateConfidence(result);
+              const result = { storeName: this.extractStoreName(lines, cleanText), date: this.extractDate(cleanText), total: this.extractTotal(cleanText), items: this.extractItems(lines, cleanText), rawText: rawText, confidence: 0 };
+              result.confidence = Math.min(100, (result.storeName?20:0) + (result.date?20:0) + (result.total?25:0) + Math.min(35, result.items.length * 5));
               return result;
           }
 
-          static cleanText(text) {
-              return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ').replace(/\s+/g, ' ').trim();
+          static extractStoreName(lines, full) {
+              const matches = [/^([A-Z][A-Z\s&']{2,})$/m, /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i, /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i];
+              for (const p of matches) { const m = full.match(p); if (m) return m[1] || m[0]; }
+              return lines.slice(0,5).find(l => l === l.toUpperCase() && l.length > 3 && l.length < 40) || null;
           }
 
-          static extractStoreName(lines, fullText) {
-              const patterns = [
-                  /^([A-Z][A-Z\s&']{2,})$/m,
-                  /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i,
-                  /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i,
-                  /(?:Thank you|Thanks for shopping at|Welcome to)\s+([A-Z][A-Z\s&']{2,})/i
-              ];
-              for (const pattern of patterns) {
-                  const match = fullText.match(pattern);
-                  if (match) return match[1] || match[0];
-              }
-              for (let i = 0; i < Math.min(5, lines.length); i++) {
-                  const line = lines[i].trim();
-                  if (line === line.toUpperCase() && line.length > 3 && line.length < 40) return line;
-              }
-              return null;
+          static extractDate(t) {
+              const m = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/) || t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
+              if(!m) return null;
+              try { return new Date(m[0]).toISOString().slice(0,10); } catch(e) { return null; }
           }
 
-          static extractDate(text) {
-              const patterns = [
-                  /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/,
-                  /(\d{1,2})-(\d{1,2})-(\d{2,4})/,
-                  /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i,
-                  /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i
-              ];
-              for (const pattern of patterns) {
-                  const match = text.match(pattern);
-                  if (match) {
-                      let day, month, year;
-                      if (pattern.toString().includes('Jan')) {
-                          month = this.getMonthNumber(match[2] || match[3]);
-                          day = parseInt(match[1] || match[2]);
-                          year = parseInt(match[3] || match[4]);
-                      } else {
-                          const parts = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-                          if (parts[0] > 12) { day = parts[0]; month = parts[1]; }
-                          else if (parts[1] > 12) { day = parts[1]; month = parts[0]; }
-                          else { month = parts[0]; day = parts[1]; }
-                          year = parts[2];
-                      }
-                      if (year < 100) year = year + (year > 25 ? 1900 : 2000);
-                      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-                          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                      }
-                  }
-              }
-              return null;
-          }
-
-          static getMonthNumber(monthName) {
-              const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-              return months.indexOf(monthName.toLowerCase().substring(0, 3)) + 1;
-          }
-
-          static extractTotal(text) {
-              const patterns = [
-                  /(?:TOTAL|AMOUNT|TOTAL DUE|NET AMOUNT|PAYMENT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
-                  /TOTAL\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
-                  /[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/
-              ];
-              for (const pattern of patterns) {
-                  const match = text.match(pattern);
-                  if (match) return parseFloat(match[1].replace(/,/g, ''));
-              }
-              return null;
+          static extractTotal(t) {
+              const m = t.match(/(?:TOTAL|AMOUNT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i) || t.match(/[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+              return m ? parseFloat(m[1].replace(/,/g, '')) : null;
           }
 
           static extractItems(lines, fullText) {
               const items = [];
               for (let i = 0; i < lines.length; i++) {
-                  const line = lines[i].trim();
-                  if (!line || this.isFooterLine(line) || this.isHeaderLine(line)) continue;
-
-                  const priceMatch = line.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
-                  const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
-                  const codeMatch = line.match(/^(\d{6,}|\w{6,})/);
-
-                  if (priceMatch && codeMatch) {
-                      const name = line.replace(priceMatch[0], '').replace(codeMatch[0], '').trim();
-                      if (name && price) items.push({ name: name, code: codeMatch[1], price: price, line: line });
-                  } else if (priceMatch && !codeMatch) {
-                      const name = line.replace(priceMatch[0], '').trim();
-                      if (name && price && name.length < 50) items.push({ name: name, code: null, price: price, line: line });
-                  } else if (codeMatch && !priceMatch) {
-                      const potentialItem = { name: line.replace(codeMatch[0], '').trim() || codeMatch[1], code: codeMatch[1], price: null, line: line };
-                      if (i + 1 < lines.length) {
-                          const nextPriceMatch = lines[i + 1].trim().match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
-                          if (nextPriceMatch) {
-                              potentialItem.price = parseFloat(nextPriceMatch[1].replace(/,/g, ''));
-                              i++;
-                          }
-                      }
-                      if (potentialItem.price) items.push(potentialItem);
-                  }
-              }
-              return items.length < 2 ? this.extractItemsFallback(lines) : items;
-          }
-
-          static extractItemsFallback(lines) {
-              const items = [];
-              for (const line of lines) {
-                  const trimmed = line.trim();
-                  const priceMatch = trimmed.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
+                  if (['TOTAL', 'TAX', 'CASH', 'TIN'].some(k => lines[i].toUpperCase().includes(k))) continue;
+                  const priceMatch = lines[i].match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
                   if (priceMatch) {
-                      const price = parseFloat(priceMatch[1].replace(/,/g, ''));
-                      const name = trimmed.replace(priceMatch[0], '').trim();
-                      if (name && price) items.push({ name: name, code: null, price: price, line: trimmed });
+                      const name = lines[i].replace(priceMatch[0], '').replace(/^(\d{6,}|\w{6,})/, '').trim();
+                      if (name) items.push({ name: name, price: parseFloat(priceMatch[1].replace(/,/g, '')) });
                   }
               }
               return items;
-          }
-
-          static isFooterLine(line) {
-              return ['TOTAL', 'AMOUNT', 'TAX', 'VAT', 'CHANGE', 'CASH', 'PAYMENT', 'DUE', 'SUBTOTAL'].some(k => line.toUpperCase().includes(k));
-          }
-
-          static isHeaderLine(line) {
-              return ['TIN', 'DATE', 'TIME', 'RECEIPT', 'INVOICE', 'TRANSACTION', 'SALES', 'INFORMATION'].some(k => line.toUpperCase().includes(k));
-          }
-
-          static calculateConfidence(result) {
-              let score = 0;
-              if (result.storeName) score += 20;
-              if (result.date) score += 20;
-              if (result.total) score += 25;
-              if (result.items.length > 0) score += Math.min(35, result.items.length * 5);
-              return Math.min(100, score);
           }
       }
 
@@ -663,45 +456,30 @@
 
           static async scan(image, options = {}, progressCb = () => {}) {
               const useOnline = this.isOnline() && options.preferOnline !== false;
-              try {
-                  if (useOnline) {
-                      try {
-                          progressCb('Calling Mindee API...', 40);
-                          return await this.scanWithMindee(image);
-                      } catch (mindeeError) {
-                          console.warn('Mindee failed, trying StructOCR...');
-                          try {
-                              progressCb('Calling StructOCR API...', 50);
-                              return await this.scanWithStructOCR(image);
-                          } catch (structError) {
-                              console.warn('StructOCR failed, falling back to Tesseract...');
-                              return await this.scanWithTesseract(image, progressCb);
-                          }
-                      }
-                  } else {
+              
+              if (useOnline) {
+                  try {
+                      progressCb('Calling Mindee API...', 40); return await this.scanWithMindee(image);
+                  } catch (e) {
+                      console.warn('Online APIs failed, falling back to Tesseract.');
                       return await this.scanWithTesseract(image, progressCb);
                   }
-              } catch (error) {
-                  console.error('All OCR methods failed:', error);
-                  throw new Error('Failed to scan receipt. Please try again or enter manually.');
+              } else {
+                  if (!ocrCachedAndReady) {
+                      throw new Error("You are offline and OCR data hasn't been cached yet. Please connect to the internet once to download the engine.");
+                  }
+                  return await this.scanWithTesseract(image, progressCb);
               }
           }
 
           static async scanWithTesseract(image, progressCb) {
               try {
-                  progressCb('Loading Tesseract.js (may download data on first run)...', 30);
-                  const logger = (m) => {
-                      if (m.status === 'recognizing text') {
-                          progressCb('Recognizing text...', 30 + (m.progress * 60));
-                      }
-                  };
+                  progressCb('Loading Tesseract.js (Service Worker Cache)...', 30);
                   const result = await Tesseract.recognize(image, RECEIPT_CONFIG.tessLanguage, {
-                      logger: logger,
-                      tessedit_pageseg_mode: RECEIPT_CONFIG.tessPageSegMode
+                      logger: m => { if (m.status === 'recognizing text') progressCb('Recognizing text...', 30 + (m.progress * 60)); }
                   });
                   const parsed = ReceiptParser.parse(result.data.text);
                   parsed.scanMethod = 'offline (Tesseract)';
-                  parsed.confidence = Math.min(parsed.confidence, 85);
                   return parsed;
               } catch (error) { throw error; }
           }
@@ -709,102 +487,85 @@
           static async scanWithMindee(image) {
               const apiKey = RECEIPT_CONFIG.mindee.apiKey;
               if (!apiKey || apiKey === 'YOUR_MINDEE_API_KEY') throw new Error('Mindee API key not configured');
-              const base64Image = await this.imageToBase64(image);
-              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, {
-                  method: 'POST',
-                  headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ document: base64Image })
-              });
-              if (!response.ok) throw new Error(`Mindee API error: ${response.status}`);
-              return this.parseMindeeResponse(await response.json());
-          }
-
-          static async scanWithStructOCR(image) {
-              const apiKey = RECEIPT_CONFIG.structOcr.apiKey;
-              if (!apiKey || apiKey === 'YOUR_STRUCTOCR_API_KEY') throw new Error('StructOCR API key not configured');
-              const base64Image = await this.imageToBase64(image);
-              const response = await fetch(RECEIPT_CONFIG.structOcr.endpoint, {
-                  method: 'POST',
-                  headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ image: base64Image, parser: 'receipt' })
-              });
-              if (!response.ok) throw new Error(`StructOCR API error: ${response.status}`);
-              return this.parseStructOCRResponse(await response.json());
-          }
-
-          static parseMindeeResponse(data) {
-              const prediction = data.document?.inference?.prediction || {};
-              return {
-                  storeName: prediction.supplier?.value || null,
-                  date: prediction.date?.value || null,
-                  total: prediction.total_amount?.value || null,
-                  items: (prediction.line_items || []).map(item => ({
-                      name: item.description || '', code: null, price: item.total_amount?.value || item.unit_price?.value || null
-                  })),
-                  confidence: 100, scanMethod: 'online (Mindee)', rawText: data.document?.extracted_text || ''
-              };
-          }
-
-          static parseStructOCRResponse(data) {
-              return {
-                  storeName: data.merchant_name || null,
-                  date: data.date || null,
-                  total: data.total || null,
-                  items: (data.items || []).map(item => ({
-                      name: item.name || '', code: item.sku || null, price: item.price || null
-                  })),
-                  confidence: 100, scanMethod: 'online (StructOCR)', rawText: data.raw_text || ''
-              };
-          }
-
-          static imageToBase64(image) {
-              return new Promise((resolve, reject) => {
-                  if (typeof image === 'string') { resolve(image); return; }
-                  const reader = new FileReader();
-                  reader.onload = () => resolve(reader.result.split(',')[1]);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(image);
-              });
+              const base64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = rej; r.readAsDataURL(image); });
+              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, { method: 'POST', headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ document: base64 }) });
+              if (!response.ok) throw new Error('API Error');
+              const data = await response.json();
+              const pred = data.document?.inference?.prediction || {};
+              return { storeName: pred.supplier?.value || null, date: pred.date?.value || null, total: pred.total_amount?.value || null, items: (pred.line_items || []).map(i => ({ name: i.description || '', price: i.total_amount?.value || null })), confidence: 100, scanMethod: 'online (Mindee)' };
           }
       }
 
       // ---------------------------------------------------------
-      // 7. SCANNER & HARDWARE MODULES
+      // 6. BACKGROUND TESSERACT WARM-UP (For Service Worker)
       // ---------------------------------------------------------
+      async function warmUpTesseract() {
+          const indicator = $('ocrReadyIndicator');
+          try {
+              console.log('Warming up Tesseract...');
+              indicator.textContent = '⏳ Downloading OCR Data (5MB)...';
+              indicator.style.color = '#eab308';
+
+              const dummyCanvas = document.createElement('canvas');
+              dummyCanvas.width = 2; dummyCanvas.height = 2;
+              const ctx = dummyCanvas.getContext('2d');
+              ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 2, 2);
+              ctx.fillStyle = 'black'; ctx.font = '1px sans-serif'; ctx.fillText('A', 0, 1);
+
+              await Tesseract.recognize(dummyCanvas, RECEIPT_CONFIG.tessLanguage, {
+                  logger: m => {
+                      if (m.status === 'loading tesseract core') {
+                          console.log('⏳ Downloading Tesseract core...');
+                      } else if (m.status === 'initializing tesseract') {
+                          console.log('⏳ Initializing OCR engine...');
+                      } else if (m.status === 'loading language traineddata') {
+                          console.log('⏳ Downloading language data...');
+                          indicator.textContent = `⏳ Caching Engine: ${Math.round(m.progress * 100)}%`;
+                      }
+                  }
+              });
+
+              ocrCachedAndReady = true;
+              indicator.textContent = '✅ Ready (Offline Capable)';
+              indicator.style.color = '#22c55e';
+              console.log('✅ Tesseract warm-up complete – language data cached.');
+
+          } catch (e) {
+              console.warn('Warm-up failed, but we\'ll try again later.', e);
+              ocrCachedAndReady = false;
+              if (navigator.onLine) {
+                  indicator.textContent = '⚠️ Engine failed to load. Will retry on scan.';
+                  indicator.style.color = '#f97316';
+              } else {
+                  indicator.textContent = '❌ Offline. Go online once to download engine.';
+                  indicator.style.color = '#ef4444';
+              }
+          }
+      }
+
+      // ---------------------------------------------------------
+      // 7. SCANNER UI HANDLERS
+      // ---------------------------------------------------------
+      function onScanSuccess(decodedText) {
+          stopScanner();
+          $('quickName').value = decodedText;
+          $('quickPrice').value = '';
+          $('quickAddPanel').classList.remove('hidden');
+          $('receiptResultPanel').classList.add('hidden'); // Fixed conflict
+          $('quickPrice').focus();
+      }
+
       async function initScanner() {
-        if (html5QrCode) {
-          await html5QrCode.stop();
-          html5QrCode.clear();
-        }
+        if (html5QrCode) { await html5QrCode.stop(); html5QrCode.clear(); }
         html5QrCode = new Html5Qrcode("reader");
         try {
-          await html5QrCode.start(
-            { facingMode: "environment" }, 
-            { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, 
-            onScanSuccess, 
-            () => {}
-          );
-          isScannerRunning = true;
-          $('startScanner').textContent = '▶ Running';
+          await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, onScanSuccess, () => {});
+          isScannerRunning = true; $('startScanner').textContent = '▶ Running';
         } catch (err) { alert('Camera unavailable: ' + err); }
       }
 
-      function onScanSuccess(decodedText) {
-        stopScanner();
-        $('quickName').value = decodedText;
-        $('quickPrice').value = '';
-        $('quickAddPanel').classList.remove('hidden');
-        $('receiptResultPanel').classList.add('hidden'); // Ensure receipt panel is closed
-        $('quickPrice').focus();
-      }
-
       async function stopScanner() {
-        if (html5QrCode && isScannerRunning) {
-          try { await html5QrCode.stop(); html5QrCode.clear(); } catch (e) {}
-          isScannerRunning = false;
-          $('startScanner').textContent = '▶ Start Camera';
-          $('quickAddPanel').classList.add('hidden');
-        }
+        if (html5QrCode && isScannerRunning) { try { await html5QrCode.stop(); html5QrCode.clear(); } catch(e){} isScannerRunning = false; $('startScanner').textContent = '▶ Start Camera'; $('quickAddPanel').classList.add('hidden'); }
       }
 
       async function scanImage(file) {
@@ -812,117 +573,94 @@
         const tempScanner = new Html5Qrcode('reader');
         try {
           const result = await tempScanner.scanFile(file, true);
-          $('quickName').value = result;
-          $('quickPrice').value = '';
-          $('quickAddPanel').classList.remove('hidden');
-          $('receiptResultPanel').classList.add('hidden');
-          $('quickPrice').focus();
-        } catch (err) {
-          alert('Could not detect 2D barcode in image. Try the Receipt OCR instead!');
-        } finally {
-          try { await tempScanner.clear(); } catch (e) {}
-        }
+          $('quickName').value = result; $('quickPrice').value = ''; $('quickAddPanel').classList.remove('hidden'); $('receiptResultPanel').classList.add('hidden'); $('quickPrice').focus();
+        } catch (err) { 
+          // Automatic fallback to Receipt OCR
+          const useOcr = confirm('No barcode detected. Would you like to scan this as a receipt using OCR?');
+          if (useOcr) {
+              await handleReceiptScan();
+          } else {
+              alert('No barcode detected. Please try a different image or use the Receipt OCR button.');
+          }
+        } finally { try { await tempScanner.clear(); } catch(e){} }
       }
 
-      // ---------------------------------------------------------
-      // 8. OCR UI INTEGRATION
-      // ---------------------------------------------------------
       async function handleReceiptScan() {
           const fileInput = $('imageUpload');
-          if (!fileInput.files.length) {
-              alert('Please select a receipt image first.');
-              return;
-          }
+          if (!fileInput.files.length) return alert('Please select a receipt image first.');
 
-          const image = fileInput.files[0];
-          const progressDiv = $('receiptProgress');
-          const progressBar = $('ocrProgressBar');
-          const statusText = $('ocrStatus');
-
-          const updateProgress = (status, percent) => {
-              statusText.textContent = status;
-              progressBar.style.width = percent + '%';
-          };
+          const progressDiv = $('receiptProgress'); const progressBar = $('ocrProgressBar'); const statusText = $('ocrStatusText');
+          const updateProgress = (status, percent) => { statusText.textContent = status; progressBar.style.width = percent + '%'; };
 
           try {
-              $('quickAddPanel').classList.add('hidden'); // Hide simple barcode form
-              progressDiv.style.display = 'block';
-              updateProgress('Initializing...', 10);
-
-              const result = await ReceiptOCR.scan(image, { preferOnline: true }, updateProgress);
-
-              updateProgress('Parsing receipt data...', 95);
+              $('quickAddPanel').classList.add('hidden');
+              progressDiv.style.display = 'block'; updateProgress('Initializing...', 10);
+              const result = await ReceiptOCR.scan(fileInput.files[0], { preferOnline: true }, updateProgress);
+              
+              updateProgress('Parsing...', 95);
               showReceiptConfirmation(result);
-
               updateProgress('Done!', 100);
               setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
-
           } catch (error) {
-              alert('Failed to scan receipt: ' + error.message);
-              progressDiv.style.display = 'none';
+              alert(error.message); progressDiv.style.display = 'none';
           }
       }
 
-      function showReceiptConfirmation(receiptData) {
-          const panel = $('receiptResultPanel');
-          const display = $('receiptDataDisplay');
-          
-          display.innerHTML = `
-              <div style="margin-bottom:8px;">
-                  <div class="label">🏪 Store</div>
-                  <div style="font-size:1.1rem;font-weight:600;">${escapeHtml(receiptData.storeName || 'Unknown')}</div>
+      function showReceiptConfirmation(r) {
+          // Generates an editable UI for the receipt items
+          const itemsHtml = (r.items || []).map((i, idx) => `
+              <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
+                  <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
+                  <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
+                  <button class="btn btn-danger" onclick="this.parentElement.remove()" style="padding:8px; width:auto;">✕</button>
               </div>
-              <div style="margin-bottom:8px;">
-                  <div class="label">📅 Date</div>
-                  <div>${receiptData.date || 'Unknown'}</div>
-              </div>
-              <div style="margin-bottom:8px;">
-                  <div class="label">💰 Total</div>
-                  <div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(receiptData.total || 0)}</div>
-              </div>
-              ${receiptData.items && receiptData.items.length > 0 ? `
-                  <div style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:8px;">
-                      <div class="label">📦 Items (${receiptData.items.length})</div>
-                      ${receiptData.items.slice(0, 5).map(item => `
-                          <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin:4px 0;">
-                              <span style="flex:1;margin-right:8px;">${escapeHtml(item.name || 'Unknown')}</span>
-                              <span>${formatCurrency(item.price || 0)}</span>
-                          </div>
-                      `).join('')}
-                      ${receiptData.items.length > 5 ? `<div style="color:#94a3b8;font-size:0.8rem;">... and ${receiptData.items.length - 5} more items</div>` : ''}
-                  </div>
-              ` : '<div style="color:#ef4444;font-size:0.8rem;margin-top:8px;">No line items detected. Only total will be saved.</div>'}
-              <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">
-                  Confidence: ${receiptData.confidence || 0}% · ${receiptData.scanMethod || 'Unknown method'}
-              </div>
-          `;
+          `).join('');
 
-          $('receiptStoreName').value = receiptData.storeName || 'Store Receipt';
-          $('receiptTotal').value = receiptData.total || '';
-          $('receiptCategory').value = 'Groceries';
+          $('receiptDataDisplay').innerHTML = `
+              <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
+              <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
+              <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
+              
+              ${r.items?.length > 0 ? `
+              <div style="margin-top:12px;border-top:1px solid #e2e8f0;padding-top:12px;">
+                  <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
+                  <div id="editableReceiptItems">${itemsHtml}</div>
+              </div>` : ''}
+              
+              <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
 
-          window._receiptItems = receiptData.items || [];
-          panel.classList.remove('hidden');
-          panel.scrollIntoView({ behavior: 'smooth' });
+          $('receiptStoreName').value = r.storeName || 'Store Receipt'; $('receiptTotal').value = r.total || ''; 
+          $('receiptResultPanel').classList.remove('hidden'); $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
       }
 
       async function saveReceiptItems() {
-          const items = window._receiptItems || [];
-          const fallbackName = $('receiptStoreName').value.trim();
-          const fallbackPrice = $('receiptTotal').value.trim();
           const category = $('receiptCategory').value;
+          const editableItemsContainer = $('editableReceiptItems');
+          let addedCount = 0;
 
-          if (items.length > 0) {
-              let addedCount = 0;
-              for (const item of items) {
-                  if (item.name && item.price) {
-                      await addEntry(item.name, item.price, category);
-                      addedCount++;
+          if (editableItemsContainer && editableItemsContainer.children.length > 0) {
+              // Batch save the edited items directly from the UI
+              for (const row of editableItemsContainer.children) {
+                  const nameInput = row.querySelector('.edit-item-name');
+                  const priceInput = row.querySelector('.edit-item-price');
+                  
+                  if (nameInput && priceInput) {
+                      const name = nameInput.value.trim();
+                      const price = priceInput.value.trim();
+                      if (name && price) {
+                          await addEntry(name, price, category);
+                          addedCount++;
+                      }
                   }
               }
               $('receiptResultPanel').classList.add('hidden');
               alert(`✅ Added ${addedCount} items from receipt!`);
+              await refreshAll(); // Refreshes the ledger automatically
           } else {
+              // Fallback to saving just the store total
+              const fallbackName = $('receiptStoreName').value.trim();
+              const fallbackPrice = $('receiptTotal').value.trim();
+              
               if (!fallbackName || !fallbackPrice) {
                   alert('Please ensure there is a store name and total price if no items were found.');
                   return;
@@ -930,189 +668,76 @@
               await addEntry(fallbackName, fallbackPrice, category);
               $('receiptResultPanel').classList.add('hidden');
               alert('✅ Receipt saved as a single entry!');
+              await refreshAll(); // Refreshes the ledger automatically
           }
-          window._receiptItems = null;
       }
 
       // ---------------------------------------------------------
-      // 9. GITHUB SYNC
+      // 8. GITHUB SYNC & EXPORT
       // ---------------------------------------------------------
       async function syncToGitHub(push = true) {
-        const token = $('githubToken').value.trim();
-        const repo = $('githubRepo').value.trim();
-        const file = $('githubFile').value.trim();
-        
-        if (!token || !repo || !file) {
-          $('syncMessage').textContent = '⚠️ Please fill all GitHub fields.';
-          return;
-        }
-        
+        const token = $('githubToken').value.trim(); const repo = $('githubRepo').value.trim(); const file = $('githubFile').value.trim();
+        if (!token || !repo || !file) return $('syncMessage').textContent = '⚠️ Fill all fields.';
         $('syncMessage').textContent = '⏳ Syncing...';
         try {
           const url = `https://api.github.com/repos/${repo}/contents/${file}`;
           const headers = { 'Authorization': `token ${token}`, 'Accept': 'application/vnd.github.v3+json' };
           
           if (push) {
-            let sha = null;
-            try {
-              const getRes = await fetch(url, { headers });
-              if (getRes.ok) sha = (await getRes.json()).sha;
-            } catch (e) {}
-
-            const entries = await db.entries.toArray();
-            const payload = {
-              message: 'Update Z-Keeper data',
-              content: btoa(JSON.stringify(entries, null, 2)),
-              sha: sha || undefined
-            };
-
-            const res = await fetch(url, { method: 'PUT', headers: headers, body: JSON.stringify(payload) });
-            if (res.ok) {
-              $('syncMessage').textContent = '✅ Push successful!';
-              await db.entries.toCollection().modify({ synced: 1 });
-              updateSyncStatus();
-            } else {
-              $('syncMessage').textContent = '❌ Push failed: ' + (await res.json()).message;
-            }
+            let sha = null; try { const getRes = await fetch(url, { headers }); if (getRes.ok) sha = (await getRes.json()).sha; } catch(e){}
+            const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ message: 'Update Z-Keeper data', content: btoa(JSON.stringify(await db.entries.toArray(), null, 2)), sha }) });
+            if (res.ok) { $('syncMessage').textContent = '✅ Push successful!'; await db.entries.toCollection().modify({ synced: 1 }); updateSyncStatus(); } 
+            else $('syncMessage').textContent = '❌ Push failed.';
           } else {
             const res = await fetch(url, { headers });
-            if (!res.ok) {
-              $('syncMessage').textContent = res.status === 404 ? 'ℹ️ No file found on GitHub.' : '❌ Pull failed.';
-              return;
-            }
+            if (!res.ok) return $('syncMessage').textContent = '❌ Pull failed.';
             const remoteEntries = JSON.parse(atob((await res.json()).content));
-            await db.entries.clear();
-            for (const e of remoteEntries) {
-              const { id, ...entry } = e;
-              await db.entries.add(entry);
-            }
-            $('syncMessage').textContent = '✅ Pull successful!';
-            await refreshAll();
+            await db.entries.clear(); for (const e of remoteEntries) { const { id, ...entry } = e; await db.entries.add(entry); }
+            $('syncMessage').textContent = '✅ Pull successful!'; await refreshAll();
           }
         } catch (err) { $('syncMessage').textContent = '❌ Error: ' + err.message; }
       }
 
       function updateSyncStatus() {
-        const syncedCount = currentEntries.filter(e => e.synced === 1).length;
-        const total = currentEntries.length;
-        const el = $('syncStatus');
-        
-        if (total === 0) el.textContent = '● empty';
-        else if (syncedCount === total) el.textContent = '✓ synced';
-        else el.textContent = `⚠ ${total - syncedCount} unsynced`;
+        const synced = currentEntries.filter(e => e.synced === 1).length; const total = currentEntries.length;
+        $('syncStatus').textContent = total === 0 ? '● empty' : synced === total ? '✓ synced' : `⚠ ${total - synced} unsynced`;
       }
 
       // ---------------------------------------------------------
-      // 10. EXPORT / IMPORT JSON
-      // ---------------------------------------------------------
-      async function exportJSON() {
-        const data = await db.entries.toArray();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'zkeeper-backup.json'; a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      function importJSON(file) {
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-          try {
-            const data = JSON.parse(e.target.result);
-            if (!Array.isArray(data)) throw new Error('Invalid format');
-            await db.entries.clear();
-            for (const entry of data) {
-              const { id, ...clean } = entry;
-              await db.entries.add(clean);
-            }
-            alert('Import successful!');
-            await refreshAll();
-          } catch (err) { alert('Import failed: ' + err.message); }
-        };
-        reader.readAsText(file);
-      }
-
-      // ---------------------------------------------------------
-      // 11. TAB SWITCHING
-      // ---------------------------------------------------------
-      function setupTabs() {
-        const tabs = document.querySelectorAll('.tab-btn');
-        tabs.forEach(btn => {
-          btn.addEventListener('click', function() {
-            tabs.forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.getElementById('panel-' + this.dataset.tab).classList.add('active');
-            if (this.dataset.tab !== 'scan') stopScanner();
-          });
-        });
-      }
-
-      // ---------------------------------------------------------
-      // 12. EVENT BINDINGS & START
+      // 9. BINDINGS & INIT
       // ---------------------------------------------------------
       function init() {
-        setupTabs();
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', function() {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); this.classList.add('active');
+          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active')); $('panel-' + this.dataset.tab).classList.add('active');
+          if (this.dataset.tab !== 'scan') stopScanner();
+        }));
 
-        // Standard Barcode Scanning
-        $('startScanner').addEventListener('click', initScanner);
+        $('startScanner').addEventListener('click', initScanner); 
         $('stopScanner').addEventListener('click', stopScanner);
-        $('scanImageBtn').addEventListener('click', function() {
-          const file = $('imageUpload').files[0];
-          if (file) scanImage(file); else alert('Please select an image first.');
-        });
-        
-        // Quick Save (Barcode fallback)
-        $('quickSaveBtn').addEventListener('click', async function() {
-          const name = $('quickName').value.trim();
-          const price = $('quickPrice').value.trim();
-          if (!name || !price) return alert('Please enter product name and price.');
-          await addEntry(name, price, $('quickCategory').value);
-          $('quickName').value = ''; $('quickPrice').value = '';
-          $('quickAddPanel').classList.add('hidden');
-        });
-
-        // OCR Scanning & Saving
+        $('scanImageBtn').addEventListener('click', () => { const f = $('imageUpload').files[0]; if(f) scanImage(f); else alert('Select image'); });
         $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
+        
+        $('quickSaveBtn').addEventListener('click', async () => { await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value); $('quickAddPanel').classList.add('hidden'); });
+        $('manualSaveBtn').addEventListener('click', async () => { await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate').value); $('manualName').value=''; $('manualPrice').value=''; alert('Saved!'); });
+        
         $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
-        $('receiptCancelBtn').addEventListener('click', () => {
-            $('receiptResultPanel').classList.add('hidden');
-            window._receiptItems = null;
-        });
+        $('receiptCancelBtn').addEventListener('click', () => $('receiptResultPanel').classList.add('hidden'));
 
-        // Manual Panel
-        $('manualSaveBtn').addEventListener('click', async function() {
-          const name = $('manualName').value.trim();
-          const price = $('manualPrice').value.trim();
-          if (!name || !price) return alert('Please enter name and price.');
-          await addEntry(name, price, $('manualCategory').value, $('manualDate').value || getDefaultDate());
-          $('manualName').value = ''; $('manualPrice').value = ''; $('manualDate').value = '';
-          alert('Entry saved!');
-        });
+        document.querySelectorAll('[data-bill]').forEach(btn => btn.addEventListener('click', function() { $('manualName').value = this.dataset.bill + ' Bill'; $('manualCategory').value = 'Utilities'; document.querySelector('.tab-btn[data-tab="manual"]').click(); }));
 
-        document.querySelectorAll('[data-bill]').forEach(btn => {
-          btn.addEventListener('click', function() {
-            $('manualName').value = this.dataset.bill + ' Bill';
-            $('manualCategory').value = 'Utilities';
-            $('manualPrice').focus();
-            document.querySelector('.tab-btn[data-tab="manual"]').click();
-          });
-        });
-
-        // Other bindings
-        $('refreshLedger').addEventListener('click', refreshAll);
+        $('refreshLedger').addEventListener('click', refreshAll); 
         $('clearAllBtn').addEventListener('click', clearAllEntries);
         $('refreshReports').addEventListener('click', renderReports);
-        $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
+        $('syncPushBtn').addEventListener('click', () => syncToGitHub(true)); 
         $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
-        $('exportJson').addEventListener('click', exportJSON);
-        $('importJson').addEventListener('click', () => $('importFileInput').click());
-        $('importFileInput').addEventListener('change', function() {
-          if (this.files.length) { importJSON(this.files[0]); this.value = ''; }
-        });
 
         refreshAll();
+        
+        // Warm up Tesseract if online
+        if (navigator.onLine) {
+            warmUpTesseract();
+        }
       }
 
       document.addEventListener('DOMContentLoaded', init);
