@@ -657,24 +657,29 @@
         }
 
         // ---------------------------------------------------------
-        // 8. IMAGE SCAN
+        // 8. IMAGE SCAN (FIXED)
         // ---------------------------------------------------------
         async function scanImage(file) {
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                const imgData = e.target.result;
+            
+            // Create a temporary scanner instance for the image
+            const tempScanner = new Html5Qrcode('reader');
+            
+            try {
+                // Use the correct instance method scanFile() for v2.x
+                const result = await tempScanner.scanFile(file, true);
+                $('quickName').value = result;
+                $('quickPrice').value = '';
+                $('quickAddPanel').classList.remove('hidden');
+                $('quickPrice').focus();
+            } catch (err) {
+                alert('Could not scan image: ' + err.message);
+            } finally {
+                // Clean up the temporary scanner
                 try {
-                    const result = await Html5Qrcode.scanImage(imgData, { useBarCodeDetectorIfSupported: true });
-                    $('quickName').value = result;
-                    $('quickPrice').value = '';
-                    $('quickAddPanel').classList.remove('hidden');
-                    $('quickPrice').focus();
-                } catch (err) {
-                    alert('Could not scan image: ' + err);
-                }
-            };
-            reader.readAsDataURL(file);
+                    await tempScanner.clear();
+                } catch (e) {}
+            }
         }
 
         // ---------------------------------------------------------
