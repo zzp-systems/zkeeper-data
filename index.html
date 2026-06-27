@@ -123,6 +123,10 @@
         <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
 
         <button class="btn btn-secondary mt-12" id="scanReceiptBtn">🧾 Scan Receipt (OCR)</button>
+        <!-- NEW HINT ADDED -->
+        <p style="font-size:0.8rem; color:#94a3b8; margin-top:8px;">
+          💡 For best results, ensure you're online and have added an OCR API key in Settings.
+        </p>
         <div id="receiptProgress" style="display:none; margin-top:12px;">
           <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
             <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
@@ -156,7 +160,6 @@
         <div class="card-title">🧾 Receipt Data Found</div>
         <div id="scannedRawData" style="background:#f1f5f9;padding:12px;border-radius:12px;margin-bottom:16px;font-size:0.85rem;max-height:400px;overflow-y:auto;">
           <div id="receiptDataDisplay">Waiting for scan...</div>
-
           <div id="editableReceiptItemsContainer" style="display:none; margin-top:12px; border-top:1px solid #e2e8f0; padding-top:12px;">
             <div class="label" style="margin-bottom:8px;">📦 Items (Edit before saving)</div>
             <div id="editableReceiptItems"></div>
@@ -536,6 +539,10 @@
         }
       };
 
+      // ================================================================
+      //  ENHANCED RECEIPT PARSER (with improved patterns)
+      // ================================================================
+
       class ReceiptParser {
         static parse(rawText) {
           const cleanText = rawText
@@ -543,6 +550,7 @@
             .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
             .replace(/\s+/g, ' ').trim();
           const lines = cleanText.split('\n').filter(line => line.trim().length > 0);
+
           const result = {
             storeName: this.extractStoreName(lines, cleanText),
             date: this.extractDate(cleanText),
@@ -560,36 +568,87 @@
           return result;
         }
 
+        // ---------- STORE NAME (enhanced) ----------
         static extractStoreName(lines, full) {
-          const matches = [
-            /^([A-Z][A-Z\s&']{2,})$/m,
-            /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy))/i,
-            /TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i
-          ];
-          for (const p of matches) {
-            const m = full.match(p);
-            if (m) return m[1] || m[0];
+          // 1. Look for all-caps, typically first 5 lines
+          for (let i = 0; i < Math.min(5, lines.length); i++) {
+            const line = lines[i].trim();
+            if (line === line.toUpperCase() && line.length > 3 && line.length < 40) {
+              return line;
+            }
           }
-          return lines.slice(0, 5).find(l => l === l.toUpperCase() && l.length > 3 && l.length < 40) || null;
+
+          // 2. Look for capitalized words (e.g., "SM Supermarket", "Robinsons Mall")
+          const capMatch = full.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy|Mall|Shop))/i);
+          if (capMatch) return capMatch[0];
+
+          // 3. Look for keywords like "TIN:" which often contain store name
+          const tinMatch = full.match(/TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i);
+          if (tinMatch) return tinMatch[1];
+
+          // 4. Look for "Thank you for shopping at ..." patterns
+          const thanksMatch = full.match(/(?:Thank you|Thanks for shopping at|Welcome to)\s+([A-Z][A-Z\s&']{2,})/i);
+          if (thanksMatch) return thanksMatch[1];
+
+          return null;
         }
 
+        // ---------- DATE (enhanced with ISO and more patterns) ----------
         static extractDate(t) {
-          const m = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/) ||
-            t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
-          if (!m) return null;
-          try { return new Date(m[0]).toISOString().slice(0, 10); } catch (e) { return null; }
+          // Try ISO: YYYY/MM/DD HH:MM:SS or YYYY-MM-DD
+          let isoMatch = t.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+          if (isoMatch) {
+            return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+          }
+
+          // Try DD/MM/YYYY or MM/DD/YYYY
+          let dateMatch = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+          if (dateMatch) {
+            let d = parseInt(dateMatch[1]), m = parseInt(dateMatch[2]), y = parseInt(dateMatch[3]);
+            if (y < 100) y += (y > 30 ? 1900 : 2000);
+            // Heuristic: if day > 12, assume DD/MM
+            if (d > 12) {
+              return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            } else {
+              // Could be MM/DD; try to validate
+              if (m <= 12 && d <= 31) {
+                return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+              }
+            }
+          }
+
+          // Try Month DD, YYYY or DD Month YYYY
+          let monthMatch = t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
+          if (monthMatch) {
+            const months = {jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12};
+            const monthNum = months[monthMatch[1].toLowerCase().substring(0,3)];
+            if (monthNum) {
+              return `${monthMatch[3]}-${String(monthNum).padStart(2,'0')}-${String(monthMatch[2]).padStart(2,'0')}`;
+            }
+          }
+
+          return null;
         }
 
+        // ---------- TOTAL (enhanced with more keywords) ----------
         static extractTotal(t) {
-          const m = t.match(/(?:TOTAL|AMOUNT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i) ||
-            t.match(/[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
-          return m ? parseFloat(m[1].replace(/,/g, '')) : null;
+          const patterns = [
+            /(?:SALE\s*AMOUNT|TOTAL\s*AMOUNT|AMOUNT\s*TENDERED|TOTAL\s*DUE|NET\s*AMOUNT|PAYMENT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+            /TOTAL\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
+            /[₱$](\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/
+          ];
+          for (const pattern of patterns) {
+            const match = t.match(pattern);
+            if (match) return parseFloat(match[1].replace(/,/g, ''));
+          }
+          return null;
         }
 
+        // ---------- ITEMS (unchanged) ----------
         static extractItems(lines, fullText) {
           const items = [];
           for (let i = 0; i < lines.length; i++) {
-            if (['TOTAL', 'TAX', 'CASH', 'TIN'].some(k => lines[i].toUpperCase().includes(k))) continue;
+            if (['TOTAL', 'TAX', 'CASH', 'TIN', 'SALE', 'AMOUNT'].some(k => lines[i].toUpperCase().includes(k))) continue;
             const priceMatch = lines[i].match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*$/);
             if (priceMatch) {
               const name = lines[i].replace(priceMatch[0], '').replace(/^(\d{6,}|\w{6,})/, '').trim();
@@ -859,20 +918,35 @@
         }
       }
 
+      // ---------------------------------------------------------
+      // 8. SHOW RECEIPT CONFIRMATION (Enhanced with warning)
+      // ---------------------------------------------------------
       function showReceiptConfirmation(r) {
         const itemsHtml = (r.items || []).map((i, idx) => `
-            <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
-                <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
-                <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
-                <button class="btn btn-danger remove-item-btn" style="padding:8px; width:auto;">✕</button>
-            </div>
-          `).join('');
+          <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
+            <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
+            <input type="number" class="edit-item-price" value="${i.price}" style="flex:1; padding:8px; font-size:0.85rem;" step="0.01" placeholder="Price" />
+            <button class="btn btn-danger remove-item-btn" style="padding:8px; width:auto;">✕</button>
+          </div>
+        `).join('');
 
-        $('receiptDataDisplay').innerHTML = `
-            <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
-            <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
-            <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
-            <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
+        let displayHtml = `
+          <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
+          <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
+          <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
+          <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>
+        `;
+
+        // If no items, show a warning and encourage manual entry
+        if (!r.items || r.items.length === 0) {
+          displayHtml += `
+            <div style="color:#ef4444; margin-top:12px; background:#fee2e2; padding:8px; border-radius:8px; font-size:0.9rem;">
+              ⚠️ No items detected automatically. You can still save the total as a single entry below, or enter items manually in the <strong>Manual</strong> tab.
+            </div>
+          `;
+        }
+
+        $('receiptDataDisplay').innerHTML = displayHtml;
 
         const itemsContainer = $('editableReceiptItemsContainer');
         const itemsList = $('editableReceiptItems');
@@ -932,7 +1006,7 @@
       }
 
       // ---------------------------------------------------------
-      // 8. GITHUB SYNC, EXPORT & SETTINGS
+      // 9. GITHUB SYNC, EXPORT & SETTINGS
       // ---------------------------------------------------------
       async function syncToGitHub(push = true) {
         const token = $('githubToken').value.trim();
@@ -1040,7 +1114,7 @@
       }
 
       // ---------------------------------------------------------
-      // 9. BINDINGS & INIT
+      // 10. BINDINGS & INIT
       // ---------------------------------------------------------
       function init() {
         // Tab routing
