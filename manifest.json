@@ -4,18 +4,65 @@
   "description": "A privacy-first, offline-capable family budget and receipt scanner.",
   "start_url": "./index.html",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f5f7fb",
   "theme_color": "#3b82f6",
+  "categories": ["finance", "productivity", "utilities"],
+  "screenshots": [
+    {
+      "src": "./screenshot-1.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "platform": "android",
+      "label": "Z-Keeper Dashboard"
+    }
+  ],
   "icons": [
     {
       "src": "./icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "./icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Scan Receipt",
+      "short_name": "Scan",
+      "description": "Open the receipt scanner",
+      "url": "./index.html?action=scan",
+      "icons": [
+        {
+          "src": "./icon-scan.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Ledger",
+      "short_name": "Ledger",
+      "description": "View all entries",
+      "url": "./index.html?action=ledger",
+      "icons": [
+        {
+          "src": "./icon-ledger.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
     }
   ]
 }
