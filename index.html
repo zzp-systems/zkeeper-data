@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Z-Keeper – Family Budget</title>
+
+    <!-- ===== Libraries (CDN) ===== -->
+    <!-- Dexie for IndexedDB -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+    <!-- html5-qrcode for scanning -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Chart.js for visualisation -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* ===== Reset & Base ===== */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f5f7fb;
+            color: #1e293b;
+            padding-bottom: 80px;
+        }
+        .container { max-width: 500px; margin: 0 auto; padding: 16px; }
+
+        /* ===== Header ===== */
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+        .app-header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+        }
+        .app-header h1 span { color: #3b82f6; }
+        .sync-status {
+            font-size: 0.8rem;
+            background: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 20px;
+        }
+
+        /* ===== Tabs ===== */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            background: #e2e8f0;
+            border-radius: 16px;
+            padding: 4px;
+            margin-bottom: 24px;
+        }
+        .tab-btn {
+            flex: 1;
+            border: none;
+            background: transparent;
+            padding: 10px 0;
+            border-radius: 12px;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        /* ===== Panels ===== */
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* ===== Cards ===== */
+        .card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            color: #0f172a;
+        }
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .row > * { flex: 1; min-width: 100px; }
+
+        /* ===== Forms ===== */
+        label { display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; color: #475569; }
+        input, select, button {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            background: #f8fafc;
+            transition: 0.2s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover { background: #2563eb; }
+        .btn-secondary { background: #e2e8f0; color: #1e293b; }
+        .btn-danger { background: #ef4444; }
+
+        /* ===== Scanner ===== */
+        #reader {
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            min-height: 300px;
+        }
+        #reader video { width: 100%; }
+
+        /* ===== Entries ===== */
+        .entry-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .entry-item .info { flex: 1; }
+        .entry-item .name { font-weight: 500; }
+        .entry-item .meta { font-size: 0.8rem; color: #94a3b8; }
+        .entry-item .price { font-weight: 700; color: #0f172a; }
+        .entry-item .delete-btn {
+            background: none;
+            border: none;
+            color: #ef4444;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        .summary-box {
+            background: #f1f5f9;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+        .summary-box .amount {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .summary-box .label { font-size: 0.9rem; color: #64748b; }
+
+        /* ===== Utilities ===== */
+        .mt-12 { margin-top: 12px; }
+        .mb-12 { margin-bottom: 12px; }
+        .flex { display: flex; gap: 8px; align-items: center; }
+        .flex .btn { flex: 1; }
+        .hidden { display: none; }
+        .text-center { text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+
+    <!-- ===== HEADER ===== -->
+    <div class="app-header">
+        <h1>Z<span>‑</span>Keeper</h1>
+        <span class="sync-status" id="syncStatus">● offline</span>
+    </div>
+
+    <!-- ===== TABS ===== -->
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="scan">📷 Scan</button>
+        <button class="tab-btn" data-tab="manual">✍️ Manual</button>
+        <button class="tab-btn" data-tab="ledger">📋 Ledger</button>
+        <button class="tab-btn" data-tab="reports">📊 Reports</button>
+        <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- PANEL: SCAN -->
+    <!-- ========================================================== -->
+    <div id="panel-scan" class="panel active">
+        <div class="card">
+            <div class="card-title">📷 Scan Barcode / QR</div>
+            <div id="reader"></div>
+            <div class="flex mt-12">
+                <button class="btn btn-secondary" id="startScanner">▶ Start Camera</button>
+                <button class="btn btn-secondary" id="stopScanner">⏹ Stop</button>
+            </div>
+            <p class="text-center mt-12" style="font-size:0.9rem;color:#64748b;">
+                Scan any QR or 2D barcode. Decoded text will be used as product name.
+            </p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📸 Scan from Image</div>
+            <input type="file" id="imageUpload" accept="image/*" />
+            <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
+        </div>
+
+        <!-- Quick add after scan -->
+        <div id="quickAddPanel" class="card hidden">
+            <div class="card-title">Add scanned item</div>
+            <label>Product name</label>
+            <input type="text" id="quickName" placeholder="e.g. Milk" />
+            <label>Price (₱)</label>
+            <input type="number" id="quickPrice" placeholder="0.00" step="0.01" />
+            <label>Category</label>
+            <select id="quickCategory">
+                <option value="Groceries">Groceries</option>
+                <option value="Vegetables">Vegetables</option>
+                <option value="Meat">Meat</option>
+                <option value="Dairy">Dairy</option>
+                <option value="Snacks">Snacks</option>
+                <option value="Beverages">Beverages</option>
+                <option value="Household">Household</option>
+                <option value="Utilities">Utilities</option>
+                <option value="Other">Other</option>
+            </select>
+            <button class="btn mt-12" id="quickSaveBtn">💾 Save Entry</button>
+        </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- PANEL: MANUAL -->
+    <!-- ========================================================== -->
+    <div id="panel-manual" class="panel">
+        <div class="card">
+            <div class="card-title">✍️ Manual Entry</div>
+            <label>Product / Bill Name</label>
+            <input type="text" id="manualName" placeholder="e.g. Electricity Bill" />
+            <label>Price (₱)</label>
+            <input type="number" id="manualPrice" placeholder="0.00" step="0.01" />
+            <label>Category</label>
+            <select id="manualCategory">
+                <option value="Groceries">Groceries</option>
+                <option value="Vegetables">Vegetables</option>
+                <option value="Meat">Meat</option>
+                <option value="Dairy">Dairy</option>
+                <option value="Snacks">Snacks</option>
+                <option value="Beverages">Beverages</option>
+                <option value="Household">Household</option>
+                <option value="Utilities">Utilities</option>
+                <option value="Other">Other</option>
+            </select>
+            <label>Date (optional)</label>
+            <input type="date" id="manualDate" />
+            <button class="btn mt-12" id="manualSaveBtn">💾 Save Entry</button>
+        </div>
+        <div class="card">
+            <div class="card-title">⚡ Quick Bills</div>
+            <div class="flex">
+                <button class="btn btn-secondary" data-bill="Electricity">💡 Electricity</button>
+                <button class="btn btn-secondary" data-bill="Internet">🌐 Internet</button>
+                <button class="btn btn-secondary" data-bill="Water">💧 Water</button>
+            </div>
+            <p style="font-size:0.8rem;color:#64748b;margin-top:8px;">
+                Clicking will open manual form with category "Utilities".
+            </p>
+        </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- PANEL: LEDGER -->
+    <!-- ========================================================== -->
+    <div id="panel-ledger" class="panel">
+        <div class="card">
+            <div class="card-title">📋 All Entries</div>
+            <div class="flex">
+                <button class="btn btn-secondary" id="refreshLedger">⟳ Refresh</button>
+                <button class="btn btn-danger" id="clearAllBtn">🗑 Clear All</button>
+            </div>
+            <div id="ledgerList"></div>
+            <div class="summary-box mt-12">
+                <div class="label">Total Spent</div>
+                <div class="amount" id="ledgerTotal">₱0.00</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- PANEL: REPORTS -->
+    <!-- ========================================================== -->
+    <div id="panel-reports" class="panel">
+        <div class="card">
+            <div class="card-title">📊 Spending Reports</div>
+            <div class="flex">
+                <select id="reportPeriod">
+                    <option value="week">This Week</option>
+                    <option value="month" selected>This Month</option>
+                    <option value="quarter">This Quarter</option>
+                    <option value="year">This Year</option>
+                </select>
+                <button class="btn btn-secondary" id="refreshReports">⟳ Update</button>
+            </div>
+            <div class="summary-box mt-12">
+                <div class="label">Total for period</div>
+                <div class="amount" id="reportTotal">₱0.00</div>
+            </div>
+            <canvas id="categoryChart" height="180" style="margin-top:16px;"></canvas>
+            <div id="reportBreakdown" style="margin-top:12px;"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">🏠 Utility Bills (separate)</div>
+            <div id="utilitySummary">Loading...</div>
+        </div>
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- PANEL: SETTINGS -->
+    <!-- ========================================================== -->
+    <div id="panel-settings" class="panel">
+        <div class="card">
+            <div class="card-title">☁️ GitHub Sync</div>
+            <label>GitHub Token</label>
+            <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" />
+            <label>Repository (owner/repo)</label>
+            <input type="text" id="githubRepo" placeholder="username/zkeeper-data" />
+            <label>Filename (e.g. data.json)</label>
+            <input type="text" id="githubFile" value="zkeeper-data.json" />
+            <div class="flex mt-12">
+                <button class="btn" id="syncPushBtn">⬆ Push to GitHub</button>
+                <button class="btn btn-secondary" id="syncPullBtn">⬇ Pull from GitHub</button>
+            </div>
+            <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
+            <hr style="margin:16px 0;border-color:#e2e8f0;" />
+            <button class="btn btn-secondary" id="exportJson">📥 Export JSON (backup)</button>
+            <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON (restore)</button>
+            <input type="file" id="importFileInput" accept=".json" style="display:none;" />
+        </div>
+        <div class="card">
+            <div class="card-title">📱 About</div>
+            <p style="color:#64748b;font-size:0.9rem;">
+                Z‑Keeper v1.0 — All data stored locally in your browser (IndexedDB).<br />
+                Sync to GitHub for backup & family sharing.
+            </p>
+        </div>
+    </div>
+
+</div>
+
+<!-- ========================================================== -->
+<!-- ===== JAVASCRIPT ===== -->
+<!-- ========================================================== -->
+<script>
+    (function() {
+        'use strict';
+
+        // ---------------------------------------------------------
+        // 1. DATABASE (Dexie)
+        // ---------------------------------------------------------
+        const db = new Dexie('ZKeeperDB');
+        db.version(1).stores({
+            entries: '++id, name, price, category, date, type, synced'
+        });
+
+        // ---------------------------------------------------------
+        // 2. STATE
+        // ---------------------------------------------------------
+        let currentEntries = [];
+        let chartInstance = null;
+        let html5QrCode = null;
+        let isScannerRunning = false;
+
+        // DOM refs
+        const $ = (id) => document.getElementById(id);
+        const $$ = (sel) => document.querySelectorAll(sel);
+
+        // ---------------------------------------------------------
+        // 3. HELPERS
+        // ---------------------------------------------------------
+        function formatDate(d) {
+            const date = new Date(d);
+            return date.toISOString().slice(0,10);
+        }
+
+        function formatCurrency(amount) {
+            return '₱' + Number(amount).toFixed(2);
+        }
+
+        function getDefaultDate() {
+            return new Date().toISOString().slice(0,10);
+        }
+
+        function getDateRange(period) {
+            const now = new Date();
+            let start = new Date(now);
+            let end = new Date(now);
+            switch (period) {
+                case 'week':
+                    start.setDate(now.getDate() - now.getDay()); // start of week (Sunday)
+                    break;
+                case 'month':
+                    start.setDate(1);
+                    break;
+                case 'quarter':
+                    const month = now.getMonth();
+                    const quarterStartMonth = Math.floor(month / 3) * 3;
+                    start.setMonth(quarterStartMonth, 1);
+                    break;
+                case 'year':
+                    start.setMonth(0, 1);
+                    break;
+                default:
+                    start = new Date(0);
+            }
+            start.setHours(0,0,0,0);
+            end.setHours(23,59,59,999);
+            return { start, end };
+        }
+
+        // ---------------------------------------------------------
+        // 4. CORE CRUD
+        // ---------------------------------------------------------
+        async function loadEntries() {
+            currentEntries = await db.entries.toArray();
+            return currentEntries;
+        }
+
+        async function addEntry(name, price, category, date, type='expense') {
+            if (!name || !price) return;
+            const entry = {
+                name: name.trim(),
+                price: parseFloat(price),
+                category: category || 'Other',
+                date: date || getDefaultDate(),
+                type: type,
+                synced: 0,
+                createdAt: new Date().toISOString()
+            };
+            await db.entries.add(entry);
+            await refreshAll();
+        }
+
+        async function deleteEntry(id) {
+            await db.entries.delete(id);
+            await refreshAll();
+        }
+
+        async function clearAllEntries() {
+            if (!confirm('Delete ALL entries permanently?')) return;
+            await db.entries.clear();
+            await refreshAll();
+        }
+
+        // ---------------------------------------------------------
+        // 5. UI REFRESH
+        // ---------------------------------------------------------
+        async function refreshAll() {
+            await loadEntries();
+            renderLedger();
+            renderReports();
+            renderUtilitySummary();
+            updateSyncStatus();
+        }
+
+        function renderLedger() {
+            const list = $('ledgerList');
+            if (!list) return;
+            if (currentEntries.length === 0) {
+                list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
+                $('ledgerTotal').textContent = '₱0.00';
+                return;
+            }
+            // Sort by date desc, then id desc
+            const sorted = [...currentEntries].sort((a,b) => {
+                if (a.date !== b.date) return b.date.localeCompare(a.date);
+                return b.id - a.id;
+            });
+            let html = '';
+            let total = 0;
+            sorted.forEach(e => {
+                total += e.price;
+                html += `
+                    <div class="entry-item">
+                        <div class="info">
+                            <div class="name">${escapeHtml(e.name)}</div>
+                            <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
+                        </div>
+                        <div class="price">${formatCurrency(e.price)}</div>
+                        <button class="delete-btn" data-id="${e.id}">✕</button>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+            $('ledgerTotal').textContent = formatCurrency(total);
+
+            // Attach delete events
+            list.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = Number(btn.dataset.id);
+                    await deleteEntry(id);
+                });
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ---------------------------------------------------------
+        // 6. REPORTS & CHARTS
+        // ---------------------------------------------------------
+        function getCategoryBreakdown(entries, start, end) {
+            const filtered = entries.filter(e => {
+                const d = new Date(e.date);
+                return d >= start && d <= end;
+            });
+            const totals = {};
+            filtered.forEach(e => {
+                const cat = e.category || 'Other';
+                totals[cat] = (totals[cat] || 0) + e.price;
+            });
+            return { filtered, totals, total: filtered.reduce((s,e) => s + e.price, 0) };
+        }
+
+        function renderReports() {
+            const period = $('reportPeriod').value;
+            const { start, end } = getDateRange(period);
+            const { filtered, totals, total } = getCategoryBreakdown(currentEntries, start, end);
+
+            $('reportTotal').textContent = formatCurrency(total);
+
+            // Breakdown text
+            const breakdownDiv = $('reportBreakdown');
+            let html = '';
+            const sortedCats = Object.keys(totals).sort((a,b) => totals[b] - totals[a]);
+            if (sortedCats.length === 0) {
+                html = '<p style="color:#94a3b8;text-align:center;">No data for this period.</p>';
+            } else {
+                sortedCats.forEach(cat => {
+                    const amount = totals[cat];
+                    const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : 0;
+                    html += `
+                        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+                            <span>${escapeHtml(cat)}</span>
+                            <span><strong>${formatCurrency(amount)}</strong> (${pct}%)</span>
+                        </div>
+                    `;
+                });
+            }
+            breakdownDiv.innerHTML = html;
+
+            // Chart
+            if (chartInstance) chartInstance.destroy();
+            const ctx = $('categoryChart').getContext('2d');
+            const labels = Object.keys(totals);
+            const data = Object.values(totals);
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels.length ? labels : ['No Data'],
+                    datasets: [{
+                        data: labels.length ? data : [1],
+                        backgroundColor: ['#3b82f6','#f97316','#8b5cf6','#22c55e','#ef4444','#eab308','#06b6d4','#ec4899','#64748b']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+
+        function renderUtilitySummary() {
+            const utilEntries = currentEntries.filter(e => e.category === 'Utilities');
+            const total = utilEntries.reduce((s,e) => s + e.price, 0);
+            const count = utilEntries.length;
+            $('utilitySummary').innerHTML = `
+                <div style="display:flex;justify-content:space-between;padding:8px 0;">
+                    <span>Total Utilities</span>
+                    <strong>${formatCurrency(total)}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #e2e8f0;">
+                    <span>Number of bills</span>
+                    <strong>${count}</strong>
+                </div>
+            `;
+        }
+
+        // ---------------------------------------------------------
+        // 7. SCANNER (html5-qrcode)
+        // ---------------------------------------------------------
+        async function initScanner() {
+            if (html5QrCode) {
+                await html5QrCode.stop();
+                html5QrCode.clear();
+            }
+            html5QrCode = new Html5Qrcode("reader");
+            try {
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess,
+                    onScanError
+                );
+                isScannerRunning = true;
+                $('startScanner').textContent = '▶ Running';
+            } catch (err) {
+                alert('Camera unavailable: ' + err);
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Stop scanner automatically after a successful scan
+            stopScanner();
+            // Fill quick add with the decoded text as product name
+            $('quickName').value = decodedText;
+            $('quickPrice').value = '';
+            $('quickAddPanel').classList.remove('hidden');
+            // Optionally focus price
+            $('quickPrice').focus();
+        }
+
+        function onScanError(err) {
+            // ignore
+        }
+
+        async function stopScanner() {
+            if (html5QrCode && isScannerRunning) {
+                try {
+                    await html5QrCode.stop();
+                    html5QrCode.clear();
+                } catch (e) {}
+                isScannerRunning = false;
+                $('startScanner').textContent = '▶ Start Camera';
+                $('quickAddPanel').classList.add('hidden');
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 8. IMAGE SCAN
+        // ---------------------------------------------------------
+        async function scanImage(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const imgData = e.target.result;
+                try {
+                    const result = await Html5Qrcode.scanImage(imgData, { useBarCodeDetectorIfSupported: true });
+                    $('quickName').value = result;
+                    $('quickPrice').value = '';
+                    $('quickAddPanel').classList.remove('hidden');
+                    $('quickPrice').focus();
+                } catch (err) {
+                    alert('Could not scan image: ' + err);
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // ---------------------------------------------------------
+        // 9. GITHUB SYNC
+        // ---------------------------------------------------------
+        async function syncToGitHub(push = true) {
+            const token = $('githubToken').value.trim();
+            const repo = $('githubRepo').value.trim();
+            const file = $('githubFile').value.trim();
+            if (!token || !repo || !file) {
+                $('syncMessage').textContent = '⚠️ Please fill all GitHub fields.';
+                return;
+            }
+            $('syncMessage').textContent = '⏳ Syncing...';
+
+            try {
+                const url = `https://api.github.com/repos/${repo}/contents/${file}`;
+                const headers = {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                };
+
+                if (push) {
+                    // GET current file SHA if exists
+                    let sha = null;
+                    try {
+                        const getRes = await fetch(url, { headers });
+                        if (getRes.ok) {
+                            const data = await getRes.json();
+                            sha = data.sha;
+                        }
+                    } catch (e) {}
+
+                    // Prepare data
+                    const entries = await db.entries.toArray();
+                    const payload = {
+                        message: 'Update Z-Keeper data',
+                        content: btoa(JSON.stringify(entries, null, 2)),
+                        sha: sha || undefined
+                    };
+                    const res = await fetch(url, {
+                        method: 'PUT',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
+                    if (res.ok) {
+                        $('syncMessage').textContent = '✅ Push successful!';
+                        // mark all as synced
+                        await db.entries.toCollection().modify({ synced: 1 });
+                        updateSyncStatus();
+                    } else {
+                        const err = await res.json();
+                        $('syncMessage').textContent = '❌ Push failed: ' + err.message;
+                    }
+                } else {
+                    // Pull
+                    const res = await fetch(url, { headers });
+                    if (!res.ok) {
+                        if (res.status === 404) {
+                            $('syncMessage').textContent = 'ℹ️ No file found on GitHub to pull.';
+                        } else {
+                            const err = await res.json();
+                            $('syncMessage').textContent = '❌ Pull failed: ' + err.message;
+                        }
+                        return;
+                    }
+                    const data = await res.json();
+                    const content = atob(data.content);
+                    const remoteEntries = JSON.parse(content);
+                    // Clear local and insert remote entries
+                    await db.entries.clear();
+                    for (const e of remoteEntries) {
+                        // Remove id to let Dexie auto-increment
+                        const { id, ...entry } = e;
+                        await db.entries.add(entry);
+                    }
+                    $('syncMessage').textContent = '✅ Pull successful!';
+                    await refreshAll();
+                }
+            } catch (err) {
+                $('syncMessage').textContent = '❌ Error: ' + err.message;
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 10. SYNC STATUS
+        // ---------------------------------------------------------
+        function updateSyncStatus() {
+            const syncedCount = currentEntries.filter(e => e.synced === 1).length;
+            const total = currentEntries.length;
+            const el = $('syncStatus');
+            if (total === 0) {
+                el.textContent = '● empty';
+            } else if (syncedCount === total) {
+                el.textContent = '✓ synced';
+            } else {
+                el.textContent = `⚠ ${total - syncedCount} unsynced`;
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 11. EXPORT / IMPORT JSON
+        // ---------------------------------------------------------
+        async function exportJSON() {
+            const data = await db.entries.toArray();
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'zkeeper-backup.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importJSON(file) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!Array.isArray(data)) throw new Error('Invalid format');
+                    await db.entries.clear();
+                    for (const entry of data) {
+                        const { id, ...clean } = entry;
+                        await db.entries.add(clean);
+                    }
+                    alert('Import successful!');
+                    await refreshAll();
+                } catch (err) {
+                    alert('Import failed: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // ---------------------------------------------------------
+        // 12. TAB SWITCHING
+        // ---------------------------------------------------------
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.tab-btn');
+            tabs.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    tabs.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    const panelId = 'panel-' + this.dataset.tab;
+                    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                    document.getElementById(panelId).classList.add('active');
+
+                    // Stop scanner if leaving scan tab
+                    if (this.dataset.tab !== 'scan') {
+                        stopScanner();
+                    } else {
+                        // auto-start scanner when tab is opened?
+                        // We'll let user click start manually.
+                    }
+                });
+            });
+        }
+
+        // ---------------------------------------------------------
+        // 13. EVENT BINDINGS
+        // ---------------------------------------------------------
+        function init() {
+            // Tabs
+            setupTabs();
+
+            // Scanner
+            $('startScanner').addEventListener('click', initScanner);
+            $('stopScanner').addEventListener('click', stopScanner);
+
+            // Image scan
+            $('scanImageBtn').addEventListener('click', function() {
+                const fileInput = $('imageUpload');
+                if (fileInput.files.length) {
+                    scanImage(fileInput.files[0]);
+                } else {
+                    alert('Please select an image first.');
+                }
+            });
+            $('imageUpload').addEventListener('change', function() {
+                if (this.files.length) {
+                    scanImage(this.files[0]);
+                }
+            });
+
+            // Quick save
+            $('quickSaveBtn').addEventListener('click', async function() {
+                const name = $('quickName').value.trim();
+                const price = $('quickPrice').value.trim();
+                const cat = $('quickCategory').value;
+                if (!name || !price) {
+                    alert('Please enter product name and price.');
+                    return;
+                }
+                await addEntry(name, price, cat);
+                $('quickName').value = '';
+                $('quickPrice').value = '';
+                $('quickAddPanel').classList.add('hidden');
+                // re-enable scanner? User can start again.
+            });
+
+            // Manual save
+            $('manualSaveBtn').addEventListener('click', async function() {
+                const name = $('manualName').value.trim();
+                const price = $('manualPrice').value.trim();
+                const cat = $('manualCategory').value;
+                const date = $('manualDate').value || getDefaultDate();
+                if (!name || !price) {
+                    alert('Please enter name and price.');
+                    return;
+                }
+                await addEntry(name, price, cat, date);
+                $('manualName').value = '';
+                $('manualPrice').value = '';
+                $('manualDate').value = '';
+                // Show feedback
+                alert('Entry saved!');
+            });
+
+            // Quick bills
+            document.querySelectorAll('[data-bill]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const bill = this.dataset.bill;
+                    $('manualName').value = bill + ' Bill';
+                    $('manualCategory').value = 'Utilities';
+                    $('manualPrice').focus();
+                    // Switch to manual tab
+                    document.querySelector('.tab-btn[data-tab="manual"]').click();
+                });
+            });
+
+            // Ledger refresh
+            $('refreshLedger').addEventListener('click', refreshAll);
+            $('clearAllBtn').addEventListener('click', clearAllEntries);
+
+            // Reports refresh
+            $('refreshReports').addEventListener('click', renderReports);
+
+            // GitHub sync
+            $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
+            $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
+
+            // Export/Import
+            $('exportJson').addEventListener('click', exportJSON);
+            $('importJson').addEventListener('click', function() {
+                $('importFileInput').click();
+            });
+            $('importFileInput').addEventListener('change', function() {
+                if (this.files.length) {
+                    importJSON(this.files[0]);
+                    this.value = '';
+                }
+            });
+
+            // Load initial data
+            refreshAll();
+        }
+
+        // ---------------------------------------------------------
+        // 14. START
+        // ---------------------------------------------------------
+        document.addEventListener('DOMContentLoaded', init);
+    })();
+</script>
+</body>
+              </html>
