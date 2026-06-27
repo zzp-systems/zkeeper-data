@@ -18,7 +18,7 @@
     /* ===== Reset & Base ===== */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f5f7fb; color: #1e293b; padding-bottom: 80px; }
-    .container { max-width: 500px; margin: 0 auto; padding: 16px; }
+    .container { max-width: 500px; margin: 0 auto; padding: 16px; position: relative; }
     /* ===== Header ===== */
     .app-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
     .app-header h1 { font-size: 1.8rem; font-weight: 700; color: #0f172a; letter-spacing: -0.5px; }
@@ -50,10 +50,10 @@
     /* ===== Entries ===== */
     .entry-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
     .entry-item .info { flex: 1; }
-    .entry-item .name { font-weight: 500; }
+    .entry-item .name { font-weight: 500; display: flex; align-items: center; gap: 6px; }
     .entry-item .meta { font-size: 0.8rem; color: #94a3b8; }
     .entry-item .price { font-weight: 700; color: #0f172a; }
-    .entry-item .delete-btn { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; }
+    .entry-item .delete-btn { background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer; padding-left: 12px;}
     .summary-box { background: #f1f5f9; border-radius: 12px; padding: 12px; text-align: center; }
     .summary-box .amount { font-size: 2rem; font-weight: 700; color: #0f172a; }
     .summary-box .label { font-size: 0.9rem; color: #64748b; }
@@ -62,8 +62,10 @@
     .mb-12 { margin-bottom: 12px; }
     .flex { display: flex; gap: 8px; align-items: center; }
     .flex .btn { flex: 1; }
-    .hidden { display: none; }
+    .hidden { display: none !important; }
     .text-center { text-align: center; }
+    .view-image-btn { cursor: pointer; padding: 2px 6px; background: #e2e8f0; border-radius: 6px; font-size: 0.75rem; border: none; }
+    .view-image-btn:hover { background: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -283,6 +285,15 @@
     </div>
   </div>
 
+  <div id="imageViewerOverlay" class="hidden" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:99; backdrop-filter:blur(2px);"></div>
+  <div id="imageViewerModal" class="card hidden" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:100; max-height:90vh; width:90%; max-width:400px; overflow:auto; box-shadow:0 10px 25px rgba(0,0,0,0.3); margin:0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div class="card-title" style="margin:0;">🧾 Scanned Receipt</div>
+          <button class="btn-secondary" id="closeImageViewer" style="width:auto; padding:4px 12px; border:none; font-weight:bold;">✕</button>
+      </div>
+      <img id="viewerImage" src="" style="width:100%; height:auto; border-radius:8px; border:1px solid #e2e8f0;" />
+  </div>
+
   <script>
     (function() {
       'use strict';
@@ -300,7 +311,6 @@
       // 1. DATABASE (Dexie)
       // ---------------------------------------------------------
       const db = new Dexie('ZKeeperDB');
-      // Incremented version to support image storage via IndexedDB
       db.version(2).stores({
         entries: '++id, name, price, category, date, type, synced, receiptImage'
       });
@@ -352,7 +362,7 @@
           date: date || getDefaultDate(), 
           type: type, 
           synced: 0, 
-          receiptImage: imageBase64, // Attached optional receipt image
+          receiptImage: imageBase64, 
           createdAt: new Date().toISOString()
         });
         await refreshAll();
@@ -383,17 +393,23 @@
         
         sorted.forEach(e => {
           total += e.price;
-          const imageIcon = e.receiptImage ? `<span title="Receipt attached" style="font-size:0.8rem;margin-left:4px;">🖼️</span>` : '';
+          // Render a button to view the receipt if image exists
+          const imageIcon = e.receiptImage ? `<button class="view-image-btn" data-id="${e.id}" title="View Receipt">🖼️</button>` : '';
+          
           html += `
             <div class="entry-item">
-              <div class="info"><div class="name">${escapeHtml(e.name)}${imageIcon}</div><div class="meta">${e.date} · ${escapeHtml(e.category)}</div></div>
-              <div class="price">${formatCurrency(e.price)}</div>
-              <button class="delete-btn" data-id="${e.id}">✕</button>
+              <div class="info">
+                <div class="name">${escapeHtml(e.name)} ${imageIcon}</div>
+                <div class="meta">${e.date} · ${escapeHtml(e.category)}</div>
+              </div>
+              <div class="price" style="display:flex; align-items:center;">
+                  ${formatCurrency(e.price)}
+                  <button class="delete-btn" data-id="${e.id}">✕</button>
+              </div>
             </div>`;
         });
         
         list.innerHTML = html; $('ledgerTotal').textContent = formatCurrency(total);
-        list.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async () => await deleteEntry(Number(btn.dataset.id))));
       }
 
       function renderReports() {
@@ -483,39 +499,74 @@
       class ReceiptOCR {
           static isOnline() { return navigator.onLine; }
 
+          /**
+           * Compresses an image file natively via HTML5 Canvas before converting to Base64.
+           * Prevents IndexedDB bloat and drastically speeds up online API uploads.
+           */
           static imageToBase64(image) {
               return new Promise((resolve, reject) => {
+                  if (typeof image === 'string') { resolve(image); return; }
+                  
                   const reader = new FileReader();
-                  reader.onload = () => resolve(reader.result.split(',')[1]);
+                  reader.onload = (event) => {
+                      const img = new Image();
+                      img.onload = () => {
+                          const maxWidth = 800;
+                          let width = img.width;
+                          let height = img.height;
+                          
+                          // Downscale if wider than 800px
+                          if (width > maxWidth) {
+                              height = Math.round((height * maxWidth) / width);
+                              width = maxWidth;
+                          }
+                          
+                          const canvas = document.createElement('canvas');
+                          canvas.width = width;
+                          canvas.height = height;
+                          const ctx = canvas.getContext('2d');
+                          ctx.drawImage(img, 0, 0, width, height);
+                          
+                          // Convert to JPEG at 70% quality to save space
+                          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                          resolve(compressedDataUrl.split(',')[1]);
+                      };
+                      // Fallback if image manipulation fails
+                      img.onerror = () => resolve(reader.result.split(',')[1]);
+                      img.src = event.target.result;
+                  };
                   reader.onerror = reject;
                   reader.readAsDataURL(image);
               });
           }
 
-          static async scan(image, options = {}, progressCb = () => {}) {
+          static async scan(base64Image, options = {}, progressCb = () => {}) {
               const useOnline = this.isOnline() && options.preferOnline !== false;
               
               if (useOnline && (RECEIPT_CONFIG.mindee.apiKey || RECEIPT_CONFIG.structOcr.apiKey)) {
                   try {
                       progressCb('Calling Online API...', 40); 
-                      // Simple routing: if mindee is available use it, otherwise structOCR logic goes here
-                      return await this.scanWithMindee(image);
+                      return await this.scanWithMindee(base64Image);
                   } catch (e) {
                       console.warn('Online APIs failed or missing keys, falling back to Tesseract.');
-                      return await this.scanWithTesseract(image, progressCb);
+                      return await this.scanWithTesseract(base64Image, progressCb);
                   }
               } else {
                   if (!ocrCachedAndReady && !useOnline) {
                       throw new Error("You are offline and OCR data hasn't been cached yet.");
                   }
-                  return await this.scanWithTesseract(image, progressCb);
+                  return await this.scanWithTesseract(base64Image, progressCb);
               }
           }
 
-          static async scanWithTesseract(image, progressCb) {
+          static async scanWithTesseract(base64Image, progressCb) {
               try {
                   progressCb('Loading Tesseract.js (Offline)...', 30);
-                  const result = await Tesseract.recognize(image, RECEIPT_CONFIG.tessLanguage, {
+                  // Tesseract can accept a base64 string directly if formatted correctly, or an image element.
+                  // Easiest is to format as a data URI:
+                  const dataUri = `data:image/jpeg;base64,${base64Image}`;
+                  
+                  const result = await Tesseract.recognize(dataUri, RECEIPT_CONFIG.tessLanguage, {
                       logger: m => { if (m.status === 'recognizing text') progressCb('Recognizing text...', 30 + (m.progress * 60)); }
                   });
                   const parsed = ReceiptParser.parse(result.data.text);
@@ -524,12 +575,17 @@
               } catch (error) { throw error; }
           }
 
-          static async scanWithMindee(image) {
+          static async scanWithMindee(base64Image) {
               const apiKey = RECEIPT_CONFIG.mindee.apiKey;
               if (!apiKey) throw new Error('Mindee API key not configured');
-              const base64 = await this.imageToBase64(image);
-              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, { method: 'POST', headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ document: base64 }) });
+              
+              const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, { 
+                  method: 'POST', 
+                  headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' }, 
+                  body: JSON.stringify({ document: base64Image }) 
+              });
               if (!response.ok) throw new Error('API Error');
+              
               const data = await response.json();
               const pred = data.document?.inference?.prediction || {};
               return { storeName: pred.supplier?.value || null, date: pred.date?.value || null, total: pred.total_amount?.value || null, items: (pred.line_items || []).map(i => ({ name: i.description || '', price: i.total_amount?.value || null })), confidence: 100, scanMethod: 'online (Mindee)' };
@@ -622,11 +678,15 @@
           try {
               $('quickAddPanel').classList.add('hidden');
               progressDiv.style.display = 'block'; 
-              updateProgress('Initializing...', 10);
               
-              // Extract base64 here so we can save it to the DB later
-              window._currentReceiptImageBase64 = await ReceiptOCR.imageToBase64(file);
-              const result = await ReceiptOCR.scan(file, { preferOnline: true }, updateProgress);
+              updateProgress('Compressing Image...', 5);
+              // Extract and massively compress the image first
+              const compressedBase64 = await ReceiptOCR.imageToBase64(file);
+              window._currentReceiptImageBase64 = compressedBase64;
+              
+              updateProgress('Initializing OCR...', 15);
+              // Pass the compressed string, saving huge bandwidth on API calls
+              const result = await ReceiptOCR.scan(compressedBase64, { preferOnline: true }, updateProgress);
               
               updateProgress('Parsing receipt data...', 90);
               await new Promise(resolve => setTimeout(resolve, 50)); 
@@ -679,15 +739,17 @@
           let addedCount = 0;
 
           if (editableItemsContainer && editableItemsContainer.children.length > 0) {
-              for (const row of editableItemsContainer.children) {
+              for (let i = 0; i < editableItemsContainer.children.length; i++) {
+                  const row = editableItemsContainer.children[i];
                   const nameInput = row.querySelector('.edit-item-name');
                   const priceInput = row.querySelector('.edit-item-price');
                   if (nameInput && priceInput) {
                       const name = nameInput.value.trim();
                       const price = priceInput.value.trim();
                       if (name && price) {
-                          // Pass image only to the first item to save space, or all. Passing to all for now.
-                          await addEntry(name, price, category, getDefaultDate(), 'expense', savedImage);
+                          // To save space, we only attach the image to the first parsed item from this receipt
+                          const imgToAttach = (i === 0) ? savedImage : null;
+                          await addEntry(name, price, category, getDefaultDate(), 'expense', imgToAttach);
                           addedCount++;
                       }
                   }
@@ -738,6 +800,7 @@
 
       function exportToCSV() {
           if (!currentEntries.length) return alert('No data to export.');
+          // Does not include the binary receiptImage data in the CSV deliberately to prevent file corruption
           let csv = 'ID,Name,Price,Category,Date,Type\n';
           currentEntries.forEach(e => {
               const safeName = `"${(e.name || '').replace(/"/g, '""')}"`;
@@ -792,6 +855,33 @@
                 if (row) row.remove();
             }
         });
+
+        // Event Delegation for Image Viewer in Ledger
+        $('ledgerList').addEventListener('click', async function(e) {
+            const btn = e.target.closest('.view-image-btn');
+            if (btn) {
+                const id = Number(btn.dataset.id);
+                const entry = await db.entries.get(id);
+                if (entry && entry.receiptImage) {
+                    $('viewerImage').src = 'data:image/jpeg;base64,' + entry.receiptImage;
+                    $('imageViewerModal').classList.remove('hidden');
+                    $('imageViewerOverlay').classList.remove('hidden');
+                }
+            } else if (e.target.classList.contains('delete-btn')) {
+                // Keep delete functionality intact here since we modified innerHTML of ledger list earlier
+                const id = Number(e.target.dataset.id);
+                await deleteEntry(id);
+            }
+        });
+
+        // Close Image Viewer
+        const closeViewer = () => {
+            $('imageViewerModal').classList.add('hidden');
+            $('imageViewerOverlay').classList.add('hidden');
+            $('viewerImage').src = '';
+        };
+        $('closeImageViewer').addEventListener('click', closeViewer);
+        $('imageViewerOverlay').addEventListener('click', closeViewer);
 
         // Manual adding logic
         $('quickSaveBtn').addEventListener('click', async () => { await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value); $('quickAddPanel').classList.add('hidden'); });
