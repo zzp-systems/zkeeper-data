@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#3b82f6" />
   <title>Z-Keeper – Family Budget</title>
+  
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
 
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -109,7 +113,7 @@
         <div class="card-title">Add scanned item</div>
         <label>Product name</label>
         <input type="text" id="quickName" placeholder="e.g. Milk" />
-        <label>Price (₱)</label>
+        <label>Price</label>
         <input type="number" id="quickPrice" placeholder="0.00" step="0.01" />
         <label>Category</label>
         <select id="quickCategory">
@@ -139,8 +143,8 @@
 
         <label>Store / Receipt Name</label>
         <input type="text" id="receiptStoreName" placeholder="e.g. SM Supermarket" />
-        <label>Total Price (₱) <span style="font-weight:normal;font-size:0.8rem;">(Used if no items found)</span></label>
-        <input type="number" id="receiptTotal" placeholder="0.00" step="0.01" />
+        <label>Total Price <span style="font-weight:normal;font-size:0.8rem;">(Used if no items found)</span></label>
+        <input type="number" id="receiptTotal" placeholder="0.00" step="0.01" value="0.00" />
         <label>Category for Items</label>
         <select id="receiptCategory">
           <option value="Groceries">Groceries</option>
@@ -164,7 +168,7 @@
         <div class="card-title">✍️ Manual Entry</div>
         <label>Product / Bill Name</label>
         <input type="text" id="manualName" placeholder="e.g. Electricity Bill" />
-        <label>Price (₱)</label>
+        <label>Price</label>
         <input type="number" id="manualPrice" placeholder="0.00" step="0.01" />
         <label>Category</label>
         <select id="manualCategory">
@@ -202,7 +206,7 @@
         <div id="ledgerList"></div>
         <div class="summary-box mt-12">
           <div class="label">Total Spent</div>
-          <div class="amount" id="ledgerTotal">₱0.00</div>
+          <div class="amount" id="ledgerTotal">0.00</div>
         </div>
       </div>
     </div>
@@ -221,7 +225,7 @@
         </div>
         <div class="summary-box mt-12">
           <div class="label">Total for period</div>
-          <div class="amount" id="reportTotal">₱0.00</div>
+          <div class="amount" id="reportTotal">0.00</div>
         </div>
         <canvas id="categoryChart" height="180" style="margin-top:16px;"></canvas>
         <div id="reportBreakdown" style="margin-top:12px;"></div>
@@ -233,6 +237,18 @@
     </div>
 
     <div id="panel-settings" class="panel">
+      
+      <div class="card">
+        <div class="card-title">⚙️ App Preferences</div>
+        <label>Currency Symbol</label>
+        <input type="text" id="prefCurrency" placeholder="₱, $, €, etc." value="₱" />
+        <label class="mt-12">Mindee API Key (Optional)</label>
+        <input type="password" id="prefMindee" placeholder="For high-accuracy online OCR" />
+        <label class="mt-12">StructOCR API Key (Optional)</label>
+        <input type="password" id="prefStruct" placeholder="Alternative online OCR API" />
+        <button class="btn mt-12" id="savePreferencesBtn">💾 Save Preferences</button>
+      </div>
+
       <div class="card">
         <div class="card-title">🧠 Offline OCR Engine</div>
         <p style="font-size:0.9rem; color:#475569;">
@@ -244,7 +260,7 @@
       </div>
 
       <div class="card">
-        <div class="card-title">☁️ GitHub Sync</div>
+        <div class="card-title">☁️ GitHub Sync & Data</div>
         <label>GitHub Token</label>
         <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" />
         <label>Repository (owner/repo)</label>
@@ -257,7 +273,10 @@
         </div>
         <p id="syncMessage" style="font-size:0.9rem;margin-top:8px;color:#475569;"></p>
         <hr style="margin:16px 0;border-color:#e2e8f0;" />
-        <button class="btn btn-secondary" id="exportJson">📥 Export JSON</button>
+        <div class="flex">
+            <button class="btn btn-secondary" id="exportJson">📥 JSON</button>
+            <button class="btn btn-secondary" id="exportCsv">📄 CSV</button>
+        </div>
         <button class="btn btn-secondary mt-12" id="importJson">📤 Import JSON</button>
         <input type="file" id="importFileInput" accept=".json" style="display:none;" />
       </div>
@@ -273,11 +292,7 @@
       // ---------------------------------------------------------
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').then(registration => {
-            console.log('ServiceWorker registration successful');
-          }).catch(err => {
-            console.log('ServiceWorker registration failed: ', err);
-          });
+          navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW failed: ', err));
         });
       }
 
@@ -285,8 +300,9 @@
       // 1. DATABASE (Dexie)
       // ---------------------------------------------------------
       const db = new Dexie('ZKeeperDB');
-      db.version(1).stores({
-        entries: '++id, name, price, category, date, type, synced'
+      // Incremented version to support image storage via IndexedDB
+      db.version(2).stores({
+        entries: '++id, name, price, category, date, type, synced, receiptImage'
       });
 
       // ---------------------------------------------------------
@@ -301,7 +317,8 @@
       const $ = (id) => document.getElementById(id);
       const $$ = (sel) => document.querySelectorAll(sel);
 
-      function formatCurrency(amount) { return '₱' + Number(amount).toFixed(2); }
+      function getCurrencySymbol() { return localStorage.getItem('zk_currency') || '₱'; }
+      function formatCurrency(amount) { return getCurrencySymbol() + Number(amount).toFixed(2); }
       function getDefaultDate() { return new Date().toISOString().slice(0,10); }
 
       function getDateRange(period) {
@@ -326,11 +343,17 @@
       // ---------------------------------------------------------
       async function loadEntries() { return currentEntries = await db.entries.toArray(); }
 
-      async function addEntry(name, price, category, date, type='expense') {
+      async function addEntry(name, price, category, date, type='expense', imageBase64=null) {
         if (!name || !price) return;
         await db.entries.add({
-          name: name.trim(), price: parseFloat(price), category: category || 'Other',
-          date: date || getDefaultDate(), type: type, synced: 0, createdAt: new Date().toISOString()
+          name: name.trim(), 
+          price: parseFloat(price), 
+          category: category || 'Other',
+          date: date || getDefaultDate(), 
+          type: type, 
+          synced: 0, 
+          receiptImage: imageBase64, // Attached optional receipt image
+          createdAt: new Date().toISOString()
         });
         await refreshAll();
       }
@@ -352,7 +375,7 @@
         const list = $('ledgerList'); if (!list) return;
         if (currentEntries.length === 0) {
           list.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px;">No entries yet.</p>';
-          $('ledgerTotal').textContent = '₱0.00'; return;
+          $('ledgerTotal').textContent = formatCurrency(0); return;
         }
 
         const sorted = [...currentEntries].sort((a,b) => a.date !== b.date ? b.date.localeCompare(a.date) : b.id - a.id);
@@ -360,9 +383,10 @@
         
         sorted.forEach(e => {
           total += e.price;
+          const imageIcon = e.receiptImage ? `<span title="Receipt attached" style="font-size:0.8rem;margin-left:4px;">🖼️</span>` : '';
           html += `
             <div class="entry-item">
-              <div class="info"><div class="name">${escapeHtml(e.name)}</div><div class="meta">${e.date} · ${escapeHtml(e.category)}</div></div>
+              <div class="info"><div class="name">${escapeHtml(e.name)}${imageIcon}</div><div class="meta">${e.date} · ${escapeHtml(e.category)}</div></div>
               <div class="price">${formatCurrency(e.price)}</div>
               <button class="delete-btn" data-id="${e.id}">✕</button>
             </div>`;
@@ -412,8 +436,8 @@
       const RECEIPT_CONFIG = {
           tessLanguage: 'fil+eng', 
           tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
-          mindee: { apiKey: 'YOUR_MINDEE_API_KEY', endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict' },
-          structOcr: { apiKey: 'YOUR_STRUCTOCR_API_KEY', endpoint: 'https://api.structocr.com/v1/ocr' }
+          get mindee() { return { apiKey: localStorage.getItem('zk_mindee') || '', endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict' }; },
+          get structOcr() { return { apiKey: localStorage.getItem('zk_struct') || '', endpoint: 'https://api.structocr.com/v1/ocr' }; }
       };
 
       class ReceiptParser {
@@ -459,19 +483,30 @@
       class ReceiptOCR {
           static isOnline() { return navigator.onLine; }
 
+          static imageToBase64(image) {
+              return new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(reader.result.split(',')[1]);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(image);
+              });
+          }
+
           static async scan(image, options = {}, progressCb = () => {}) {
               const useOnline = this.isOnline() && options.preferOnline !== false;
               
-              if (useOnline) {
+              if (useOnline && (RECEIPT_CONFIG.mindee.apiKey || RECEIPT_CONFIG.structOcr.apiKey)) {
                   try {
-                      progressCb('Calling Mindee API...', 40); return await this.scanWithMindee(image);
+                      progressCb('Calling Online API...', 40); 
+                      // Simple routing: if mindee is available use it, otherwise structOCR logic goes here
+                      return await this.scanWithMindee(image);
                   } catch (e) {
-                      console.warn('Online APIs failed, falling back to Tesseract.');
+                      console.warn('Online APIs failed or missing keys, falling back to Tesseract.');
                       return await this.scanWithTesseract(image, progressCb);
                   }
               } else {
-                  if (!ocrCachedAndReady) {
-                      throw new Error("You are offline and OCR data hasn't been cached yet. Please connect to the internet once to download the engine.");
+                  if (!ocrCachedAndReady && !useOnline) {
+                      throw new Error("You are offline and OCR data hasn't been cached yet.");
                   }
                   return await this.scanWithTesseract(image, progressCb);
               }
@@ -479,7 +514,7 @@
 
           static async scanWithTesseract(image, progressCb) {
               try {
-                  progressCb('Loading Tesseract.js (Service Worker Cache)...', 30);
+                  progressCb('Loading Tesseract.js (Offline)...', 30);
                   const result = await Tesseract.recognize(image, RECEIPT_CONFIG.tessLanguage, {
                       logger: m => { if (m.status === 'recognizing text') progressCb('Recognizing text...', 30 + (m.progress * 60)); }
                   });
@@ -491,8 +526,8 @@
 
           static async scanWithMindee(image) {
               const apiKey = RECEIPT_CONFIG.mindee.apiKey;
-              if (!apiKey || apiKey === 'YOUR_MINDEE_API_KEY') throw new Error('Mindee API key not configured');
-              const base64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = rej; r.readAsDataURL(image); });
+              if (!apiKey) throw new Error('Mindee API key not configured');
+              const base64 = await this.imageToBase64(image);
               const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, { method: 'POST', headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ document: base64 }) });
               if (!response.ok) throw new Error('API Error');
               const data = await response.json();
@@ -507,7 +542,6 @@
       async function warmUpTesseract() {
           const indicator = $('ocrReadyIndicator');
           try {
-              console.log('Warming up Tesseract...');
               indicator.textContent = '⏳ Downloading OCR Data (5MB)...';
               indicator.style.color = '#eab308';
 
@@ -519,12 +553,7 @@
 
               await Tesseract.recognize(dummyCanvas, RECEIPT_CONFIG.tessLanguage, {
                   logger: m => {
-                      if (m.status === 'loading tesseract core') {
-                          console.log('⏳ Downloading Tesseract core...');
-                      } else if (m.status === 'initializing tesseract') {
-                          console.log('⏳ Initializing OCR engine...');
-                      } else if (m.status === 'loading language traineddata') {
-                          console.log('⏳ Downloading language data...');
+                      if (m.status === 'loading language traineddata') {
                           indicator.textContent = `⏳ Caching Engine: ${Math.round(m.progress * 100)}%`;
                       }
                   }
@@ -533,10 +562,7 @@
               ocrCachedAndReady = true;
               indicator.textContent = '✅ Ready (Offline Capable)';
               indicator.style.color = '#22c55e';
-              console.log('✅ Tesseract warm-up complete – language data cached.');
-
           } catch (e) {
-              console.warn('Warm-up failed, but we\'ll try again later.', e);
               ocrCachedAndReady = false;
               if (navigator.onLine) {
                   indicator.textContent = '⚠️ Engine failed to load. Will retry on scan.';
@@ -556,7 +582,7 @@
           $('quickName').value = decodedText;
           $('quickPrice').value = '';
           $('quickAddPanel').classList.remove('hidden');
-          $('receiptResultPanel').classList.add('hidden'); // Fixed conflict
+          $('receiptResultPanel').classList.add('hidden');
           $('quickPrice').focus();
       }
 
@@ -580,13 +606,8 @@
           const result = await tempScanner.scanFile(file, true);
           $('quickName').value = result; $('quickPrice').value = ''; $('quickAddPanel').classList.remove('hidden'); $('receiptResultPanel').classList.add('hidden'); $('quickPrice').focus();
         } catch (err) { 
-          // Automatic fallback to Receipt OCR
           const useOcr = confirm('No barcode detected. Would you like to scan this as a receipt using OCR?');
-          if (useOcr) {
-              await handleReceiptScan();
-          } else {
-              alert('No barcode detected. Please try a different image or use the Receipt OCR button.');
-          }
+          if (useOcr) await handleReceiptScan();
         } finally { try { await tempScanner.clear(); } catch(e){} }
       }
 
@@ -594,6 +615,7 @@
           const fileInput = $('imageUpload');
           if (!fileInput.files.length) return alert('Please select a receipt image first.');
 
+          const file = fileInput.files[0];
           const progressDiv = $('receiptProgress'); const progressBar = $('ocrProgressBar'); const statusText = $('ocrStatusText');
           const updateProgress = (status, percent) => { statusText.textContent = status; progressBar.style.width = percent + '%'; };
 
@@ -602,10 +624,11 @@
               progressDiv.style.display = 'block'; 
               updateProgress('Initializing...', 10);
               
-              const result = await ReceiptOCR.scan(fileInput.files[0], { preferOnline: true }, updateProgress);
+              // Extract base64 here so we can save it to the DB later
+              window._currentReceiptImageBase64 = await ReceiptOCR.imageToBase64(file);
+              const result = await ReceiptOCR.scan(file, { preferOnline: true }, updateProgress);
               
               updateProgress('Parsing receipt data...', 90);
-              // Give the UI a micro-tick to render the 90% state before blocking the main thread 
               await new Promise(resolve => setTimeout(resolve, 50)); 
               
               showReceiptConfirmation(result);
@@ -618,7 +641,6 @@
       }
 
       function showReceiptConfirmation(r) {
-          // CSP Compliant: Generate HTML without inline onclick
           const itemsHtml = (r.items || []).map((i, idx) => `
               <div class="receipt-item-row" style="display:flex; gap:8px; margin-bottom:8px;">
                   <input type="text" class="edit-item-name" value="${escapeHtml(i.name)}" style="flex:2; padding:8px; font-size:0.85rem;" placeholder="Item name" />
@@ -627,14 +649,12 @@
               </div>
           `).join('');
 
-          // Update the static receipt display element
           $('receiptDataDisplay').innerHTML = `
               <div style="margin-bottom:8px;"><div class="label">🏪 Store</div><div style="font-size:1.1rem;font-weight:600;">${escapeHtml(r.storeName || 'Unknown')}</div></div>
               <div style="margin-bottom:8px;"><div class="label">📅 Date</div><div>${r.date || 'Unknown'}</div></div>
               <div style="margin-bottom:8px;"><div class="label">💰 Total</div><div style="font-size:1.3rem;font-weight:700;color:#22c55e;">${formatCurrency(r.total || 0)}</div></div>
               <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>`;
 
-          // Check if there are items and render into our predefined container
           const itemsContainer = $('editableReceiptItemsContainer');
           const itemsList = $('editableReceiptItems');
           
@@ -647,7 +667,7 @@
           }
 
           $('receiptStoreName').value = r.storeName || 'Store Receipt'; 
-          $('receiptTotal').value = r.total || ''; 
+          $('receiptTotal').value = r.total || '0.00'; 
           $('receiptResultPanel').classList.remove('hidden'); 
           $('receiptResultPanel').scrollIntoView({ behavior: 'smooth' });
       }
@@ -655,44 +675,43 @@
       async function saveReceiptItems() {
           const category = $('receiptCategory').value;
           const editableItemsContainer = $('editableReceiptItems');
+          const savedImage = window._currentReceiptImageBase64 || null;
           let addedCount = 0;
 
           if (editableItemsContainer && editableItemsContainer.children.length > 0) {
-              // Batch save the edited items directly from the UI
               for (const row of editableItemsContainer.children) {
                   const nameInput = row.querySelector('.edit-item-name');
                   const priceInput = row.querySelector('.edit-item-price');
-                  
                   if (nameInput && priceInput) {
                       const name = nameInput.value.trim();
                       const price = priceInput.value.trim();
                       if (name && price) {
-                          await addEntry(name, price, category);
+                          // Pass image only to the first item to save space, or all. Passing to all for now.
+                          await addEntry(name, price, category, getDefaultDate(), 'expense', savedImage);
                           addedCount++;
                       }
                   }
               }
               $('receiptResultPanel').classList.add('hidden');
               alert(`✅ Added ${addedCount} items from receipt!`);
-              await refreshAll(); // Refreshes the ledger automatically
+              await refreshAll();
           } else {
-              // Fallback to saving just the store total
               const fallbackName = $('receiptStoreName').value.trim();
               const fallbackPrice = $('receiptTotal').value.trim();
-              
               if (!fallbackName || !fallbackPrice) {
                   alert('Please ensure there is a store name and total price if no items were found.');
                   return;
               }
-              await addEntry(fallbackName, fallbackPrice, category);
+              await addEntry(fallbackName, fallbackPrice, category, getDefaultDate(), 'expense', savedImage);
               $('receiptResultPanel').classList.add('hidden');
               alert('✅ Receipt saved as a single entry!');
-              await refreshAll(); // Refreshes the ledger automatically
+              await refreshAll();
           }
+          window._currentReceiptImageBase64 = null; // Clear from memory
       }
 
       // ---------------------------------------------------------
-      // 8. GITHUB SYNC & EXPORT
+      // 8. GITHUB SYNC, EXPORT & SETTINGS
       // ---------------------------------------------------------
       async function syncToGitHub(push = true) {
         const token = $('githubToken').value.trim(); const repo = $('githubRepo').value.trim(); const file = $('githubFile').value.trim();
@@ -717,9 +736,29 @@
         } catch (err) { $('syncMessage').textContent = '❌ Error: ' + err.message; }
       }
 
+      function exportToCSV() {
+          if (!currentEntries.length) return alert('No data to export.');
+          let csv = 'ID,Name,Price,Category,Date,Type\n';
+          currentEntries.forEach(e => {
+              const safeName = `"${(e.name || '').replace(/"/g, '""')}"`;
+              csv += `${e.id},${safeName},${e.price},${e.category},${e.date},${e.type}\n`;
+          });
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'zkeeper-export.csv'; a.click();
+          URL.revokeObjectURL(url);
+      }
+
       function updateSyncStatus() {
         const synced = currentEntries.filter(e => e.synced === 1).length; const total = currentEntries.length;
         $('syncStatus').textContent = total === 0 ? '● empty' : synced === total ? '✓ synced' : `⚠ ${total - synced} unsynced`;
+      }
+
+      function loadPreferences() {
+          $('prefCurrency').value = localStorage.getItem('zk_currency') || '₱';
+          $('prefMindee').value = localStorage.getItem('zk_mindee') || '';
+          $('prefStruct').value = localStorage.getItem('zk_struct') || '';
       }
 
       // ---------------------------------------------------------
@@ -741,7 +780,10 @@
         // Receipt Scans
         $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
         $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
-        $('receiptCancelBtn').addEventListener('click', () => $('receiptResultPanel').classList.add('hidden'));
+        $('receiptCancelBtn').addEventListener('click', () => {
+            $('receiptResultPanel').classList.add('hidden');
+            window._currentReceiptImageBase64 = null; // Clear on cancel
+        });
 
         // Event Delegation for dynamically generated receipt row deletion (CSP Safe)
         $('scannedRawData').addEventListener('click', function(e) {
@@ -762,10 +804,20 @@
         $('refreshReports').addEventListener('click', renderReports);
         $('syncPushBtn').addEventListener('click', () => syncToGitHub(true)); 
         $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
+        
+        // Settings & Exports
+        $('savePreferencesBtn').addEventListener('click', () => {
+            localStorage.setItem('zk_currency', $('prefCurrency').value.trim() || '₱');
+            localStorage.setItem('zk_mindee', $('prefMindee').value.trim());
+            localStorage.setItem('zk_struct', $('prefStruct').value.trim());
+            alert('Preferences saved!');
+            refreshAll(); // Reloads currency formatting immediately
+        });
+        $('exportCsv').addEventListener('click', exportToCSV);
 
+        loadPreferences();
         refreshAll();
         
-        // Warm up Tesseract if online
         if (navigator.onLine) {
             warmUpTesseract();
         }
