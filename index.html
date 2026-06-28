@@ -15,9 +15,14 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
-  <!-- TensorFlow.js & docTR-TFJS -->
+  <!-- TensorFlow.js (required before docTR) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/doctr-tfjs@0.7.0/dist/doctr-tfjs.min.js"></script>
+
+  <!-- docTR-TFJS – with fallback if CDN fails -->
+  <script
+    src="https://unpkg.com/doctr-tfjs@0.7.0/dist/doctr-tfjs.min.js"
+    onerror="console.error('docTR-TFJS failed to load. Falling back to Tesseract.'); window.doctr = null;"
+  ></script>
 
   <style>
     /* ===== Reset & Base ===== */
@@ -718,11 +723,17 @@
         }
 
         static async scanWithDocTRTFJS(imageData, progressCb) {
-          if (!doctrLoaded && !doctrLoading) {
-            progressCb('Loading docTR model (10MB)...', 20);
-            await loadDocTRModel();
+          // Ensure model is loaded; if not, throw so we fallback
+          if (!doctrLoaded) {
+            if (!doctrLoading) {
+              // Attempt to load if not already loading
+              await loadDocTRModel();
+            } else {
+              // Wait for loading to finish
+              while (doctrLoading) await new Promise(r => setTimeout(r, 200));
+            }
           }
-          if (!doctrLoaded) throw new Error('docTR model failed to load.');
+          if (!doctrLoaded) throw new Error('docTR model not available.');
           progressCb('Running docTR OCR...', 60);
           const img = await tf.browser.fromPixelsAsync(imageData);
           const result = await doctrModel(img.expandDims(0));
@@ -788,6 +799,7 @@
           }
           if (!base64 && !imageData) throw new Error('Unsupported image source.');
 
+          // Try docTR-TFJS (in-browser) if available
           if (doctrLoaded || navigator.onLine) {
             try {
               if (!imageData) {
@@ -808,12 +820,14 @@
             } catch (e) { console.warn('docTR-TFJS failed:', e); }
           }
 
+          // Try self-hosted docTR API if configured
           const apiUrl = getDocTRAPIUrl();
           if (apiUrl && base64) {
             try { return await this.scanWithDocTRAPI(base64, progressCb); }
             catch (e) { console.warn('docTR API failed:', e); }
           }
 
+          // Final fallback: Tesseract.js
           if (base64) {
             return await this.scanWithTesseract(base64, progressCb);
           } else {
@@ -823,12 +837,20 @@
       }
 
       // ---------------------------------------------------------
-      // 7. LOAD docTR-TFJS MODEL
+      // 7. LOAD docTR-TFJS MODEL (with error handling)
       // ---------------------------------------------------------
       async function loadDocTRModel() {
+        // If already loaded or loading, skip
         if (doctrLoaded) return;
         if (doctrLoading) {
           while (doctrLoading) await new Promise(r => setTimeout(r, 200));
+          return;
+        }
+        // Check if the 'doctr' global exists
+        if (typeof doctr === 'undefined' || doctr === null) {
+          console.warn('docTR library not loaded. Skipping docTR.');
+          doctrLoaded = false;
+          updateDocTRStatus();
           return;
         }
         doctrLoading = true;
@@ -855,8 +877,8 @@
           status.textContent = '⏳ Loading...';
           status.style.color = '#eab308';
         } else {
-          status.textContent = '❌ Not loaded';
-          status.style.color = '#ef4444';
+          status.textContent = '⚠️ Not available (fallback to Tesseract)';
+          status.style.color = '#f97316';
         }
       }
 
@@ -1373,8 +1395,12 @@
         refreshAll();
 
         warmUpTesseract();
-        if (navigator.onLine) {
+        // Attempt to load docTR model only if online and the library is present
+        if (navigator.onLine && typeof doctr !== 'undefined' && doctr !== null) {
           loadDocTRModel();
+        } else {
+          // If offline or library not loaded, update status accordingly
+          updateDocTRStatus();
         }
       }
 
