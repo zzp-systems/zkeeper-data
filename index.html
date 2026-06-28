@@ -416,13 +416,16 @@
       let html5QrCode = null;
       let isScannerRunning = false;
       let ocrCachedAndReady = false;
-      let noBarcodeTimer = null;
-      let bannerVisible = false;
 
       // docTR-TFJS state
       let doctrModel = null;
       let doctrLoaded = false;
       let doctrLoading = false;
+
+      // Timer state
+      let noBarcodeTimer = null;
+      let bannerVisible = false;
+      let timerStarted = false;
 
       const $ = (id) => document.getElementById(id);
       const $$ = (sel) => document.querySelectorAll(sel);
@@ -892,7 +895,7 @@
       }
 
       // ---------------------------------------------------------
-      // 9. SCANNER UI HANDLERS (with Floating Banner)
+      // 9. SCANNER UI HANDLERS (with Floating Banner - FIXED)
       // ---------------------------------------------------------
       function showBanner() {
         const banner = $('noBarcodeBanner');
@@ -915,23 +918,24 @@
           clearTimeout(noBarcodeTimer);
           noBarcodeTimer = null;
         }
+        timerStarted = false;
         hideBanner();
       }
 
       function startNoBarcodeTimer() {
-        resetNoBarcodeTimer();
+        if (timerStarted) return;
+        timerStarted = true;
         noBarcodeTimer = setTimeout(() => {
           if (isScannerRunning) {
             showBanner();
           }
           noBarcodeTimer = null;
-        }, 4000); // 4 seconds
+          timerStarted = false;
+        }, 4000);
       }
 
       function onScanSuccess(decodedText) {
-        // Reset the timer and hide banner
         resetNoBarcodeTimer();
-        // Handle barcode
         stopScanner();
         $('quickName').value = decodedText;
         $('quickPrice').value = '';
@@ -949,8 +953,7 @@
             { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
             onScanSuccess,
             () => {
-              // onScanError – no barcode detected
-              if (isScannerRunning && !noBarcodeTimer && !bannerVisible) {
+              if (isScannerRunning) {
                 startNoBarcodeTimer();
               }
             }
@@ -958,7 +961,7 @@
           isScannerRunning = true;
           $('startScanner').textContent = '▶ Running';
           $('captureReceiptBtn').style.display = 'inline-block';
-          resetNoBarcodeTimer(); // start fresh
+          resetNoBarcodeTimer();
         } catch (err) { alert('Camera unavailable: ' + err); }
       }
 
@@ -986,9 +989,7 @@
         canvas.height = videoElement.videoHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(videoElement, 0, 0);
-        // Stop camera
         stopScanner();
-        // Show progress
         const progressDiv = $('receiptProgress');
         const progressBar = $('ocrProgressBar');
         const statusText = $('ocrStatusText');
@@ -1260,7 +1261,6 @@
       // 14. BINDINGS & INIT
       // ---------------------------------------------------------
       function init() {
-        // Tab routing
         document.querySelectorAll('.tab-btn').forEach(btn =>
           btn.addEventListener('click', function() {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1271,12 +1271,9 @@
           })
         );
 
-        // Hardware scanners
         $('startScanner').addEventListener('click', initScanner);
         $('stopScanner').addEventListener('click', stopScanner);
         $('captureReceiptBtn').addEventListener('click', captureReceipt);
-
-        // Floating banner tap handler
         $('noBarcodeBanner').addEventListener('click', captureReceipt);
 
         $('scanImageBtn').addEventListener('click', () => {
@@ -1285,7 +1282,6 @@
           else alert('Select image');
         });
 
-        // Receipt Scans
         $('scanReceiptBtn').addEventListener('click', handleReceiptScan);
         $('receiptSaveBtn').addEventListener('click', saveReceiptItems);
         $('receiptCancelBtn').addEventListener('click', () => {
@@ -1293,7 +1289,6 @@
           window._currentReceiptImageBase64 = null;
         });
 
-        // Event Delegation for dynamically generated receipt row deletion (CSP Safe)
         $('scannedRawData').addEventListener('click', function(e) {
           if (e.target.classList.contains('remove-item-btn')) {
             const row = e.target.closest('.receipt-item-row');
@@ -1301,7 +1296,6 @@
           }
         });
 
-        // Event Delegation for Image Viewer & Delete in Ledger
         $('ledgerList').addEventListener('click', async function(e) {
           const btn = e.target.closest('.view-image-btn');
           if (btn) {
@@ -1318,7 +1312,6 @@
           }
         });
 
-        // Close Image Viewer
         const closeViewer = () => {
           $('imageViewerModal').classList.add('hidden');
           $('imageViewerOverlay').classList.add('hidden');
@@ -1327,7 +1320,6 @@
         $('closeImageViewer').addEventListener('click', closeViewer);
         $('imageViewerOverlay').addEventListener('click', closeViewer);
 
-        // Keyboard shortcut: Escape to close viewer
         document.addEventListener('keydown', function(e) {
           if (e.key === 'Escape') {
             if (!$('imageViewerModal').classList.contains('hidden')) {
@@ -1336,14 +1328,12 @@
           }
         });
 
-        // Manual adding logic
         $('quickSaveBtn').addEventListener('click', async () => {
           await addEntry($('quickName').value, $('quickPrice').value, $('quickCategory').value);
           $('quickAddPanel').classList.add('hidden');
         });
         $('manualSaveBtn').addEventListener('click', async () => {
-          await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate')
-            .value);
+          await addEntry($('manualName').value, $('manualPrice').value, $('manualCategory').value, $('manualDate').value);
           $('manualName').value = '';
           $('manualPrice').value = '';
           alert('Saved!');
@@ -1356,14 +1346,12 @@
           })
         );
 
-        // UI refresh and sync logic
         $('refreshLedger').addEventListener('click', refreshAll);
         $('clearAllBtn').addEventListener('click', clearAllEntries);
         $('refreshReports').addEventListener('click', renderReports);
         $('syncPushBtn').addEventListener('click', () => syncToGitHub(true));
         $('syncPullBtn').addEventListener('click', () => syncToGitHub(false));
 
-        // Settings & Exports
         $('savePreferencesBtn').addEventListener('click', () => {
           localStorage.setItem('zk_currency', $('prefCurrency').value.trim() || '₱');
           localStorage.setItem('zk_doctr_api', $('prefDocTRAPI').value.trim());
@@ -1371,10 +1359,7 @@
           refreshAll();
         });
 
-        // JSON Export
         $('exportJson').addEventListener('click', exportJSON);
-
-        // JSON Import
         $('importJson').addEventListener('click', () => $('importFileInput').click());
         $('importFileInput').addEventListener('change', function() {
           if (this.files.length) {
@@ -1382,17 +1367,12 @@
             this.value = '';
           }
         });
-
-        // CSV Export
         $('exportCsv').addEventListener('click', exportToCSV);
 
         loadPreferences();
         refreshAll();
 
-        // Warm up Tesseract
         warmUpTesseract();
-
-        // Preload docTR model if online
         if (navigator.onLine) {
           loadDocTRModel();
         }
