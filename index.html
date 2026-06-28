@@ -9,10 +9,15 @@
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
 
+  <!-- Dexie, html5-qrcode, Chart.js, Tesseract.js -->
   <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- TensorFlow.js & docTR-TFJS -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/doctr-tfjs@0.7.0/dist/doctr-tfjs.min.js"></script>
 
   <style>
     /* ===== Reset & Base ===== */
@@ -44,9 +49,61 @@
     .btn:hover { background: #2563eb; }
     .btn-secondary { background: #e2e8f0; color: #1e293b; }
     .btn-danger { background: #ef4444; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn-success:hover { background: #16a34a; }
     /* ===== Scanner ===== */
-    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 300px; }
-    #reader video { width: 100%; }
+    #reader {
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      min-height: 300px;
+      position: relative;
+    }
+    #reader video { width: 100%; display: block; }
+    #captureOverlay {
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #captureOverlay button {
+      pointer-events: auto;
+      width: auto;
+      padding: 12px 24px;
+    }
+    /* ===== Floating "No Barcode" Banner ===== */
+    #noBarcodeBanner {
+      position: absolute;
+      bottom: 80px;
+      left: 10%;
+      right: 10%;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 14px 20px;
+      border-radius: 14px;
+      text-align: center;
+      font-size: 0.95rem;
+      cursor: pointer;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+    }
+    #noBarcodeBanner.visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    #noBarcodeBanner:active {
+      background: rgba(0, 0, 0, 0.9);
+    }
     /* ===== Entries ===== */
     .entry-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
     .entry-item .info { flex: 1; }
@@ -86,6 +143,11 @@
     }
     #imageViewerModal .close-btn:hover { background: #cbd5e1; }
     #viewerImage { width: 100%; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
+    /* ===== OCR Progress ===== */
+    .ocr-progress-container { display: none; margin-top: 12px; }
+    .ocr-progress-container .progress-bar { background: #f1f5f9; border-radius: 8px; overflow: hidden; height: 8px; }
+    .ocr-progress-container .progress-fill { width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s; }
+    .ocr-progress-container .status-text { font-size: 0.85rem; color: #64748b; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -107,13 +169,21 @@
     <div id="panel-scan" class="panel active">
       <div class="card">
         <div class="card-title">📷 Scan Barcode / QR</div>
-        <div id="reader"></div>
+        <div id="reader">
+          <!-- Floating banner for no-barcode detection -->
+          <div id="noBarcodeBanner" class="hidden">
+            📷 No barcode detected. <strong>Tap to capture receipt</strong>
+          </div>
+          <div id="captureOverlay">
+            <button class="btn btn-success" id="captureReceiptBtn" style="display:none;">📷 Capture Receipt</button>
+          </div>
+        </div>
         <div class="flex mt-12">
           <button class="btn btn-secondary" id="startScanner">▶ Start Camera</button>
           <button class="btn btn-secondary" id="stopScanner">⏹ Stop</button>
         </div>
         <p class="text-center mt-12" style="font-size:0.9rem;color:#64748b;">
-          Scan any QR or 2D barcode. Decoded text will be used as product name.
+          Scan any QR or 2D barcode, or tap <strong>"Capture Receipt"</strong> while camera is running to scan a document.
         </p>
       </div>
 
@@ -123,16 +193,15 @@
         <button class="btn btn-secondary mt-12" id="scanImageBtn">Scan Uploaded Image</button>
 
         <button class="btn btn-secondary mt-12" id="scanReceiptBtn">🧾 Scan Receipt (OCR)</button>
-        <!-- NEW HINT ADDED -->
-        <p style="font-size:0.8rem; color:#94a3b8; margin-top:8px;">
-          💡 For best results, ensure you're online and have added an OCR API key in Settings.
-        </p>
         <div id="receiptProgress" style="display:none; margin-top:12px;">
           <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;">
             <div id="ocrProgressBar" style="width:0%;height:100%;background:#3b82f6;transition:width 0.3s;"></div>
           </div>
           <p id="ocrStatusText" style="font-size:0.85rem;color:#64748b;margin-top:6px;">Initializing...</p>
         </div>
+        <p style="font-size:0.8rem; color:#94a3b8; margin-top:8px;">
+          💡 Uses docTR (in-browser) for high accuracy. Tesseract.js fallback when offline.
+        </p>
       </div>
 
       <div id="quickAddPanel" class="card hidden">
@@ -266,20 +335,21 @@
         <div class="card-title">⚙️ App Preferences</div>
         <label>Currency Symbol</label>
         <input type="text" id="prefCurrency" placeholder="₱, $, €, etc." value="₱" />
-        <label class="mt-12">Mindee API Key (Optional)</label>
-        <input type="password" id="prefMindee" placeholder="For high-accuracy online OCR" />
-        <label class="mt-12">StructOCR API Key (Optional)</label>
-        <input type="password" id="prefStruct" placeholder="Alternative online OCR API" />
+        <label class="mt-12">Self-Hosted docTR API URL (Optional)</label>
+        <input type="text" id="prefDocTRAPI" placeholder="http://192.168.1.100:5000/ocr" />
         <button class="btn mt-12" id="savePreferencesBtn">💾 Save Preferences</button>
       </div>
 
       <div class="card">
-        <div class="card-title">🧠 Offline OCR Engine</div>
+        <div class="card-title">🧠 OCR Engine Status</div>
         <p style="font-size:0.9rem; color:#475569;">
-          Status: <strong id="ocrReadyIndicator">Checking cache...</strong>
+          docTR-TFJS (in-browser): <strong id="doctrStatus">Loading...</strong>
+        </p>
+        <p style="font-size:0.9rem; color:#475569;">
+          Tesseract.js (offline): <strong id="tesseractStatus">Checking...</strong>
         </p>
         <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">
-          The engine requires ~5MB of data to be downloaded once. Afterwards, receipt scanning works 100% offline via Service Worker.
+          docTR models (~10MB) load on first use. Self‑hosted API can be used as fallback.
         </p>
       </div>
 
@@ -346,6 +416,13 @@
       let html5QrCode = null;
       let isScannerRunning = false;
       let ocrCachedAndReady = false;
+      let noBarcodeTimer = null;
+      let bannerVisible = false;
+
+      // docTR-TFJS state
+      let doctrModel = null;
+      let doctrLoaded = false;
+      let doctrLoading = false;
 
       const $ = (id) => document.getElementById(id);
       const $$ = (sel) => document.querySelectorAll(sel);
@@ -353,26 +430,18 @@
       function getCurrencySymbol() { return localStorage.getItem('zk_currency') || '₱'; }
       function formatCurrency(amount) { return getCurrencySymbol() + Number(amount).toFixed(2); }
       function getDefaultDate() { return new Date().toISOString().slice(0, 10); }
+      function getDocTRAPIUrl() { return localStorage.getItem('zk_doctr_api') || ''; }
 
       function getDateRange(period) {
         const now = new Date();
         let start = new Date(now);
         let end = new Date(now);
         switch (period) {
-          case 'week':
-            start.setDate(now.getDate() - now.getDay());
-            break;
-          case 'month':
-            start.setDate(1);
-            break;
-          case 'quarter':
-            start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
-            break;
-          case 'year':
-            start.setMonth(0, 1);
-            break;
-          default:
-            start = new Date(0);
+          case 'week': start.setDate(now.getDate() - now.getDay()); break;
+          case 'month': start.setDate(1); break;
+          case 'quarter': start.setMonth(Math.floor(now.getMonth() / 3) * 3, 1); break;
+          case 'year': start.setMonth(0, 1); break;
+          default: start = new Date(0);
         }
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
@@ -520,29 +589,8 @@
       }
 
       // ---------------------------------------------------------
-      // 5. RECEIPT OCR MODULE & HYBRID LOGIC
+      // 5. ENHANCED RECEIPT PARSER
       // ---------------------------------------------------------
-      const RECEIPT_CONFIG = {
-        tessLanguage: 'fil+eng',
-        tessPageSegMode: Tesseract.PSM.SINGLE_BLOCK,
-        get mindee() {
-          return {
-            apiKey: localStorage.getItem('zk_mindee') || '',
-            endpoint: 'https://api.mindee.net/v1/products/mindee/expense_receipts/v4/predict'
-          };
-        },
-        get structOcr() {
-          return {
-            apiKey: localStorage.getItem('zk_struct') || '',
-            endpoint: 'https://api.structocr.com/v1/ocr'
-          };
-        }
-      };
-
-      // ================================================================
-      //  ENHANCED RECEIPT PARSER (with improved patterns)
-      // ================================================================
-
       class ReceiptParser {
         static parse(rawText) {
           const cleanText = rawText
@@ -568,69 +616,41 @@
           return result;
         }
 
-        // ---------- STORE NAME (enhanced) ----------
         static extractStoreName(lines, full) {
-          // 1. Look for all-caps, typically first 5 lines
           for (let i = 0; i < Math.min(5, lines.length); i++) {
             const line = lines[i].trim();
             if (line === line.toUpperCase() && line.length > 3 && line.length < 40) {
               return line;
             }
           }
-
-          // 2. Look for capitalized words (e.g., "SM Supermarket", "Robinsons Mall")
           const capMatch = full.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Store|Market|Supermarket|Mart|Grocery|Pharmacy|Mall|Shop))/i);
           if (capMatch) return capMatch[0];
-
-          // 3. Look for keywords like "TIN:" which often contain store name
           const tinMatch = full.match(/TIN\s*:\s*[\d-]+\s*-\s*([A-Z][A-Z\s&']{2,})/i);
           if (tinMatch) return tinMatch[1];
-
-          // 4. Look for "Thank you for shopping at ..." patterns
           const thanksMatch = full.match(/(?:Thank you|Thanks for shopping at|Welcome to)\s+([A-Z][A-Z\s&']{2,})/i);
           if (thanksMatch) return thanksMatch[1];
-
           return null;
         }
 
-        // ---------- DATE (enhanced with ISO and more patterns) ----------
         static extractDate(t) {
-          // Try ISO: YYYY/MM/DD HH:MM:SS or YYYY-MM-DD
           let isoMatch = t.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
-          if (isoMatch) {
-            return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-          }
-
-          // Try DD/MM/YYYY or MM/DD/YYYY
+          if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
           let dateMatch = t.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
           if (dateMatch) {
             let d = parseInt(dateMatch[1]), m = parseInt(dateMatch[2]), y = parseInt(dateMatch[3]);
             if (y < 100) y += (y > 30 ? 1900 : 2000);
-            // Heuristic: if day > 12, assume DD/MM
-            if (d > 12) {
-              return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            } else {
-              // Could be MM/DD; try to validate
-              if (m <= 12 && d <= 31) {
-                return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-              }
-            }
+            if (d > 12) return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            else if (m <= 12 && d <= 31) return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
           }
-
-          // Try Month DD, YYYY or DD Month YYYY
           let monthMatch = t.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
           if (monthMatch) {
             const months = {jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12};
             const monthNum = months[monthMatch[1].toLowerCase().substring(0,3)];
-            if (monthNum) {
-              return `${monthMatch[3]}-${String(monthNum).padStart(2,'0')}-${String(monthMatch[2]).padStart(2,'0')}`;
-            }
+            if (monthNum) return `${monthMatch[3]}-${String(monthNum).padStart(2,'0')}-${String(monthMatch[2]).padStart(2,'0')}`;
           }
-
           return null;
         }
 
-        // ---------- TOTAL (enhanced with more keywords) ----------
         static extractTotal(t) {
           const patterns = [
             /(?:SALE\s*AMOUNT|TOTAL\s*AMOUNT|AMOUNT\s*TENDERED|TOTAL\s*DUE|NET\s*AMOUNT|PAYMENT|DUE)\s*[:.]?\s*[₱$]?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
@@ -644,7 +664,6 @@
           return null;
         }
 
-        // ---------- ITEMS (unchanged) ----------
         static extractItems(lines, fullText) {
           const items = [];
           for (let i = 0; i < lines.length; i++) {
@@ -659,16 +678,15 @@
         }
       }
 
+      // ---------------------------------------------------------
+      // 6. OCR ENGINE: docTR-TFJS + docTR API + Tesseract.js
+      // ---------------------------------------------------------
       class ReceiptOCR {
         static isOnline() { return navigator.onLine; }
 
-        /**
-         * Compresses an image file to base64 (JPEG, 800px width, quality 0.7)
-         */
         static imageToBase64(image) {
           return new Promise((resolve, reject) => {
             if (typeof image === 'string') { resolve(image); return; }
-
             const reader = new FileReader();
             reader.onload = (event) => {
               const img = new Image();
@@ -696,109 +714,157 @@
           });
         }
 
-        static async scan(base64Image, options = {}, progressCb = () => {}) {
-          const useOnline = this.isOnline() && options.preferOnline !== false;
-
-          if (useOnline && (RECEIPT_CONFIG.mindee.apiKey || RECEIPT_CONFIG.structOcr.apiKey)) {
-            try {
-              progressCb('Calling Online API...', 40);
-              // Try Mindee first, fallback to StructOCR if available
-              if (RECEIPT_CONFIG.mindee.apiKey) {
-                try {
-                  return await this.scanWithMindee(base64Image);
-                } catch (e) {
-                  console.warn('Mindee failed, trying StructOCR if available.');
-                  if (RECEIPT_CONFIG.structOcr.apiKey) {
-                    return await this.scanWithStructOCR(base64Image);
-                  }
-                  throw e;
-                }
-              } else if (RECEIPT_CONFIG.structOcr.apiKey) {
-                return await this.scanWithStructOCR(base64Image);
-              } else {
-                throw new Error('No online API keys configured.');
-              }
-            } catch (e) {
-              console.warn('Online APIs failed, falling back to Tesseract.', e);
-              return await this.scanWithTesseract(base64Image, progressCb);
-            }
-          } else {
-            if (!ocrCachedAndReady && !useOnline) {
-              throw new Error("You are offline and OCR data hasn't been cached yet. Please connect to the internet once to download the engine.");
-            }
-            return await this.scanWithTesseract(base64Image, progressCb);
+        static async scanWithDocTRTFJS(imageData, progressCb) {
+          if (!doctrLoaded && !doctrLoading) {
+            progressCb('Loading docTR model (10MB)...', 20);
+            await loadDocTRModel();
           }
+          if (!doctrLoaded) throw new Error('docTR model failed to load.');
+          progressCb('Running docTR OCR...', 60);
+          const img = await tf.browser.fromPixelsAsync(imageData);
+          const result = await doctrModel(img.expandDims(0));
+          const text = result.text;
+          const parsed = ReceiptParser.parse(text);
+          parsed.scanMethod = 'docTR-TFJS (in-browser)';
+          return parsed;
+        }
+
+        static async scanWithDocTRAPI(base64Image, progressCb) {
+          const apiUrl = getDocTRAPIUrl();
+          if (!apiUrl) throw new Error('docTR API URL not configured.');
+          progressCb('Calling docTR API...', 50);
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image })
+          });
+          if (!response.ok) throw new Error('docTR API error: ' + response.status);
+          const data = await response.json();
+          const text = data.text || data.result || '';
+          const parsed = ReceiptParser.parse(text);
+          parsed.scanMethod = 'docTR API (self-hosted)';
+          return parsed;
         }
 
         static async scanWithTesseract(base64Image, progressCb) {
-          try {
-            progressCb('Loading Tesseract.js (Offline)...', 30);
-            const dataUri = `data:image/jpeg;base64,${base64Image}`;
-            const result = await Tesseract.recognize(dataUri, RECEIPT_CONFIG.tessLanguage, {
-              logger: m => {
-                if (m.status === 'recognizing text') {
-                  progressCb('Recognizing text...', 30 + (m.progress * 60));
-                }
+          progressCb('Using Tesseract.js (offline)...', 30);
+          const dataUri = `data:image/jpeg;base64,${base64Image}`;
+          const result = await Tesseract.recognize(dataUri, 'fil+eng', {
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                progressCb('Recognizing text...', 30 + (m.progress * 60));
               }
-            });
-            const parsed = ReceiptParser.parse(result.data.text);
-            parsed.scanMethod = 'offline (Tesseract)';
-            return parsed;
-          } catch (error) { throw error; }
+            }
+          });
+          const parsed = ReceiptParser.parse(result.data.text);
+          parsed.scanMethod = 'offline (Tesseract)';
+          return parsed;
         }
 
-        static async scanWithMindee(base64Image) {
-          const apiKey = RECEIPT_CONFIG.mindee.apiKey;
-          if (!apiKey) throw new Error('Mindee API key not configured');
-          const response = await fetch(RECEIPT_CONFIG.mindee.endpoint, {
-            method: 'POST',
-            headers: { 'Authorization': `Token ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ document: base64Image })
-          });
-          if (!response.ok) throw new Error('Mindee API error: ' + response.status);
-          const data = await response.json();
-          const pred = data.document?.inference?.prediction || {};
-          return {
-            storeName: pred.supplier?.value || null,
-            date: pred.date?.value || null,
-            total: pred.total_amount?.value || null,
-            items: (pred.line_items || []).map(i => ({ name: i.description || '', price: i.total_amount?.value || null })),
-            confidence: 100,
-            scanMethod: 'online (Mindee)'
-          };
-        }
+        static async scan(imageSource, options = {}, progressCb = () => {}) {
+          let base64 = null;
+          let imageData = null;
+          if (typeof imageSource === 'string') {
+            base64 = imageSource;
+          } else if (imageSource instanceof File) {
+            base64 = await this.imageToBase64(imageSource);
+          } else if (imageSource instanceof HTMLImageElement || imageSource instanceof HTMLCanvasElement) {
+            const canvas = imageSource instanceof HTMLCanvasElement ? imageSource : null;
+            if (canvas) {
+              imageData = canvas;
+              base64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+            } else {
+              const c = document.createElement('canvas');
+              c.width = imageSource.width;
+              c.height = imageSource.height;
+              const ctx = c.getContext('2d');
+              ctx.drawImage(imageSource, 0, 0);
+              imageData = c;
+              base64 = c.toDataURL('image/jpeg', 0.7).split(',')[1];
+            }
+          }
+          if (!base64 && !imageData) throw new Error('Unsupported image source.');
 
-        static async scanWithStructOCR(base64Image) {
-          const apiKey = RECEIPT_CONFIG.structOcr.apiKey;
-          if (!apiKey) throw new Error('StructOCR API key not configured');
-          const response = await fetch(RECEIPT_CONFIG.structOcr.endpoint, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Image, parser: 'receipt' })
-          });
-          if (!response.ok) throw new Error('StructOCR API error: ' + response.status);
-          const data = await response.json();
-          // Adapt depending on actual StructOCR response structure
-          return {
-            storeName: data.merchant_name || null,
-            date: data.date || null,
-            total: data.total || null,
-            items: (data.items || []).map(i => ({ name: i.name || '', price: i.price || null })),
-            confidence: 100,
-            scanMethod: 'online (StructOCR)'
-          };
+          if (doctrLoaded || navigator.onLine) {
+            try {
+              if (!imageData) {
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                  img.onload = resolve;
+                  img.onerror = reject;
+                  img.src = 'data:image/jpeg;base64,' + base64;
+                });
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                imageData = canvas;
+              }
+              return await this.scanWithDocTRTFJS(imageData, progressCb);
+            } catch (e) { console.warn('docTR-TFJS failed:', e); }
+          }
+
+          const apiUrl = getDocTRAPIUrl();
+          if (apiUrl && base64) {
+            try { return await this.scanWithDocTRAPI(base64, progressCb); }
+            catch (e) { console.warn('docTR API failed:', e); }
+          }
+
+          if (base64) {
+            return await this.scanWithTesseract(base64, progressCb);
+          } else {
+            throw new Error('No OCR method succeeded.');
+          }
         }
       }
 
       // ---------------------------------------------------------
-      // 6. BACKGROUND TESSERACT WARM-UP (For Service Worker)
+      // 7. LOAD docTR-TFJS MODEL
+      // ---------------------------------------------------------
+      async function loadDocTRModel() {
+        if (doctrLoaded) return;
+        if (doctrLoading) {
+          while (doctrLoading) await new Promise(r => setTimeout(r, 200));
+          return;
+        }
+        doctrLoading = true;
+        try {
+          const model = await doctr.loadModel('default');
+          doctrModel = model;
+          doctrLoaded = true;
+          updateDocTRStatus();
+        } catch (e) {
+          console.error('Failed to load docTR model:', e);
+          doctrLoaded = false;
+          updateDocTRStatus();
+        } finally {
+          doctrLoading = false;
+        }
+      }
+
+      function updateDocTRStatus() {
+        const status = $('doctrStatus');
+        if (doctrLoaded) {
+          status.textContent = '✅ Loaded (in-browser)';
+          status.style.color = '#22c55e';
+        } else if (doctrLoading) {
+          status.textContent = '⏳ Loading...';
+          status.style.color = '#eab308';
+        } else {
+          status.textContent = '❌ Not loaded';
+          status.style.color = '#ef4444';
+        }
+      }
+
+      // ---------------------------------------------------------
+      // 8. TESSERACT WARM-UP
       // ---------------------------------------------------------
       async function warmUpTesseract() {
-        const indicator = $('ocrReadyIndicator');
+        const indicator = $('tesseractStatus');
         try {
-          indicator.textContent = '⏳ Downloading OCR Data (5MB)...';
+          indicator.textContent = '⏳ Caching...';
           indicator.style.color = '#eab308';
-
           const dummyCanvas = document.createElement('canvas');
           dummyCanvas.width = 2;
           dummyCanvas.height = 2;
@@ -808,34 +874,64 @@
           ctx.fillStyle = 'black';
           ctx.font = '1px sans-serif';
           ctx.fillText('A', 0, 1);
-
-          await Tesseract.recognize(dummyCanvas, RECEIPT_CONFIG.tessLanguage, {
+          await Tesseract.recognize(dummyCanvas, 'fil+eng', {
             logger: m => {
               if (m.status === 'loading language traineddata') {
-                indicator.textContent = `⏳ Caching Engine: ${Math.round(m.progress * 100)}%`;
+                indicator.textContent = `⏳ Caching: ${Math.round(m.progress * 100)}%`;
               }
             }
           });
-
           ocrCachedAndReady = true;
-          indicator.textContent = '✅ Ready (Offline Capable)';
+          indicator.textContent = '✅ Ready (offline)';
           indicator.style.color = '#22c55e';
         } catch (e) {
           ocrCachedAndReady = false;
-          if (navigator.onLine) {
-            indicator.textContent = '⚠️ Engine failed to load. Will retry on scan.';
-            indicator.style.color = '#f97316';
-          } else {
-            indicator.textContent = '❌ Offline. Go online once to download engine.';
-            indicator.style.color = '#ef4444';
-          }
+          indicator.textContent = '⚠️ Not cached';
+          indicator.style.color = '#f97316';
         }
       }
 
       // ---------------------------------------------------------
-      // 7. SCANNER UI HANDLERS
+      // 9. SCANNER UI HANDLERS (with Floating Banner)
       // ---------------------------------------------------------
+      function showBanner() {
+        const banner = $('noBarcodeBanner');
+        if (!banner) return;
+        banner.classList.add('visible');
+        banner.classList.remove('hidden');
+        bannerVisible = true;
+      }
+
+      function hideBanner() {
+        const banner = $('noBarcodeBanner');
+        if (!banner) return;
+        banner.classList.remove('visible');
+        banner.classList.add('hidden');
+        bannerVisible = false;
+      }
+
+      function resetNoBarcodeTimer() {
+        if (noBarcodeTimer) {
+          clearTimeout(noBarcodeTimer);
+          noBarcodeTimer = null;
+        }
+        hideBanner();
+      }
+
+      function startNoBarcodeTimer() {
+        resetNoBarcodeTimer();
+        noBarcodeTimer = setTimeout(() => {
+          if (isScannerRunning) {
+            showBanner();
+          }
+          noBarcodeTimer = null;
+        }, 4000); // 4 seconds
+      }
+
       function onScanSuccess(decodedText) {
+        // Reset the timer and hide banner
+        resetNoBarcodeTimer();
+        // Handle barcode
         stopScanner();
         $('quickName').value = decodedText;
         $('quickPrice').value = '';
@@ -845,47 +941,54 @@
       }
 
       async function initScanner() {
-        if (html5QrCode) { await html5QrCode.stop();
-          html5QrCode.clear(); }
+        if (html5QrCode) { await html5QrCode.stop(); html5QrCode.clear(); }
         html5QrCode = new Html5Qrcode("reader");
         try {
-          await html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, onScanSuccess, () => {});
+          await html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+            onScanSuccess,
+            () => {
+              // onScanError – no barcode detected
+              if (isScannerRunning && !noBarcodeTimer && !bannerVisible) {
+                startNoBarcodeTimer();
+              }
+            }
+          );
           isScannerRunning = true;
           $('startScanner').textContent = '▶ Running';
+          $('captureReceiptBtn').style.display = 'inline-block';
+          resetNoBarcodeTimer(); // start fresh
         } catch (err) { alert('Camera unavailable: ' + err); }
       }
 
       async function stopScanner() {
         if (html5QrCode && isScannerRunning) {
-          try { await html5QrCode.stop();
-            html5QrCode.clear(); } catch (e) {}
+          try { await html5QrCode.stop(); html5QrCode.clear(); } catch (e) {}
           isScannerRunning = false;
           $('startScanner').textContent = '▶ Start Camera';
+          $('captureReceiptBtn').style.display = 'none';
           $('quickAddPanel').classList.add('hidden');
+          resetNoBarcodeTimer();
+          hideBanner();
         }
       }
 
-      async function scanImage(file) {
-        if (!file) return;
-        const tempScanner = new Html5Qrcode('reader');
-        try {
-          const result = await tempScanner.scanFile(file, true);
-          $('quickName').value = result;
-          $('quickPrice').value = '';
-          $('quickAddPanel').classList.remove('hidden');
-          $('receiptResultPanel').classList.add('hidden');
-          $('quickPrice').focus();
-        } catch (err) {
-          const useOcr = confirm('No barcode detected. Would you like to scan this as a receipt using OCR?');
-          if (useOcr) await handleReceiptScan();
-        } finally { try { await tempScanner.clear(); } catch (e) {} }
-      }
-
-      async function handleReceiptScan() {
-        const fileInput = $('imageUpload');
-        if (!fileInput.files.length) return alert('Please select a receipt image first.');
-
-        const file = fileInput.files[0];
+      // ---------------------------------------------------------
+      // 10. CAPTURE RECEIPT (from banner or button)
+      // ---------------------------------------------------------
+      async function captureReceipt() {
+        if (!html5QrCode) return;
+        const videoElement = html5QrCode.getVideoElement();
+        if (!videoElement) return alert('No video feed available.');
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoElement, 0, 0);
+        // Stop camera
+        stopScanner();
+        // Show progress
         const progressDiv = $('receiptProgress');
         const progressBar = $('ocrProgressBar');
         const statusText = $('ocrStatusText');
@@ -893,33 +996,21 @@
           statusText.textContent = status;
           progressBar.style.width = percent + '%';
         };
-
+        progressDiv.style.display = 'block';
+        updateProgress('Processing captured image...', 10);
         try {
-          $('quickAddPanel').classList.add('hidden');
-          progressDiv.style.display = 'block';
-
-          updateProgress('Compressing Image...', 5);
-          const compressedBase64 = await ReceiptOCR.imageToBase64(file);
-          window._currentReceiptImageBase64 = compressedBase64;
-
-          updateProgress('Initializing OCR...', 15);
-          const result = await ReceiptOCR.scan(compressedBase64, { preferOnline: true }, updateProgress);
-
-          updateProgress('Parsing receipt data...', 90);
-          await new Promise(resolve => setTimeout(resolve, 50));
-
+          const result = await ReceiptOCR.scan(canvas, {}, updateProgress);
           showReceiptConfirmation(result);
-
           updateProgress('Done!', 100);
           setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
-        } catch (error) {
-          alert(error.message);
+        } catch (e) {
+          alert('OCR failed: ' + e.message);
           progressDiv.style.display = 'none';
         }
       }
 
       // ---------------------------------------------------------
-      // 8. SHOW RECEIPT CONFIRMATION (Enhanced with warning)
+      // 11. RECEIPT CONFIRMATION UI
       // ---------------------------------------------------------
       function showReceiptConfirmation(r) {
         const itemsHtml = (r.items || []).map((i, idx) => `
@@ -937,7 +1028,6 @@
           <div style="margin-top:8px;font-size:0.75rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px;">Method: ${r.scanMethod}</div>
         `;
 
-        // If no items, show a warning and encourage manual entry
         if (!r.items || r.items.length === 0) {
           displayHtml += `
             <div style="color:#ef4444; margin-top:12px; background:#fee2e2; padding:8px; border-radius:8px; font-size:0.9rem;">
@@ -980,7 +1070,6 @@
               const name = nameInput.value.trim();
               const price = priceInput.value.trim();
               if (name && price) {
-                // Attach image only to the first item to save space
                 const imgToAttach = (i === 0) ? savedImage : null;
                 await addEntry(name, price, category, getDefaultDate(), 'expense', imgToAttach);
                 addedCount++;
@@ -1006,7 +1095,62 @@
       }
 
       // ---------------------------------------------------------
-      // 9. GITHUB SYNC, EXPORT & SETTINGS
+      // 12. IMAGE UPLOAD & RECEIPT SCAN HANDLERS
+      // ---------------------------------------------------------
+      async function handleReceiptScan() {
+        const fileInput = $('imageUpload');
+        if (!fileInput.files.length) return alert('Please select a receipt image first.');
+
+        const file = fileInput.files[0];
+        const progressDiv = $('receiptProgress');
+        const progressBar = $('ocrProgressBar');
+        const statusText = $('ocrStatusText');
+        const updateProgress = (status, percent) => {
+          statusText.textContent = status;
+          progressBar.style.width = percent + '%';
+        };
+
+        try {
+          $('quickAddPanel').classList.add('hidden');
+          progressDiv.style.display = 'block';
+          updateProgress('Compressing Image...', 5);
+          const compressedBase64 = await ReceiptOCR.imageToBase64(file);
+          window._currentReceiptImageBase64 = compressedBase64;
+
+          updateProgress('Initializing OCR...', 15);
+          const result = await ReceiptOCR.scan(compressedBase64, { preferOnline: true }, updateProgress);
+
+          updateProgress('Parsing receipt data...', 90);
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          showReceiptConfirmation(result);
+
+          updateProgress('Done!', 100);
+          setTimeout(() => { progressDiv.style.display = 'none'; }, 1000);
+        } catch (error) {
+          alert(error.message);
+          progressDiv.style.display = 'none';
+        }
+      }
+
+      async function scanImage(file) {
+        if (!file) return;
+        const tempScanner = new Html5Qrcode('reader');
+        try {
+          const result = await tempScanner.scanFile(file, true);
+          $('quickName').value = result;
+          $('quickPrice').value = '';
+          $('quickAddPanel').classList.remove('hidden');
+          $('receiptResultPanel').classList.add('hidden');
+          $('quickPrice').focus();
+        } catch (err) {
+          const useOcr = confirm('No barcode detected. Would you like to scan this as a receipt using OCR?');
+          if (useOcr) await handleReceiptScan();
+        } finally { try { await tempScanner.clear(); } catch (e) {} }
+      }
+
+      // ---------------------------------------------------------
+      // 13. GITHUB SYNC, EXPORT & SETTINGS
       // ---------------------------------------------------------
       async function syncToGitHub(push = true) {
         const token = $('githubToken').value.trim();
@@ -1109,12 +1253,11 @@
 
       function loadPreferences() {
         $('prefCurrency').value = localStorage.getItem('zk_currency') || '₱';
-        $('prefMindee').value = localStorage.getItem('zk_mindee') || '';
-        $('prefStruct').value = localStorage.getItem('zk_struct') || '';
+        $('prefDocTRAPI').value = localStorage.getItem('zk_doctr_api') || '';
       }
 
       // ---------------------------------------------------------
-      // 10. BINDINGS & INIT
+      // 14. BINDINGS & INIT
       // ---------------------------------------------------------
       function init() {
         // Tab routing
@@ -1131,6 +1274,11 @@
         // Hardware scanners
         $('startScanner').addEventListener('click', initScanner);
         $('stopScanner').addEventListener('click', stopScanner);
+        $('captureReceiptBtn').addEventListener('click', captureReceipt);
+
+        // Floating banner tap handler
+        $('noBarcodeBanner').addEventListener('click', captureReceipt);
+
         $('scanImageBtn').addEventListener('click', () => {
           const f = $('imageUpload').files[0];
           if (f) scanImage(f);
@@ -1218,8 +1366,7 @@
         // Settings & Exports
         $('savePreferencesBtn').addEventListener('click', () => {
           localStorage.setItem('zk_currency', $('prefCurrency').value.trim() || '₱');
-          localStorage.setItem('zk_mindee', $('prefMindee').value.trim());
-          localStorage.setItem('zk_struct', $('prefStruct').value.trim());
+          localStorage.setItem('zk_doctr_api', $('prefDocTRAPI').value.trim());
           alert('Preferences saved!');
           refreshAll();
         });
@@ -1242,8 +1389,12 @@
         loadPreferences();
         refreshAll();
 
+        // Warm up Tesseract
+        warmUpTesseract();
+
+        // Preload docTR model if online
         if (navigator.onLine) {
-          warmUpTesseract();
+          loadDocTRModel();
         }
       }
 
