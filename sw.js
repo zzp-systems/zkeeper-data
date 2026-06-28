@@ -1,5 +1,5 @@
 // sw.js - Z-Keeper Service Worker
-const CACHE_VERSION = 'zkeeper-ocr-v3'; // 🔄 Bumped version
+const CACHE_VERSION = 'zkeeper-ocr-v3'; // Bumped version
 const CACHE_NAME = `zkeeper-${CACHE_VERSION}`;
 
 // App shell assets - cached on install
@@ -17,8 +17,8 @@ const OCR_PATTERNS = [
     'tesseract.js-core@5',
     'traineddata',
     'projectnaptha',
-    'tensorflow',    // ✅ Added for TF.js
-    'doctr',         // ✅ Added for docTR-TFJS
+    'tensorflow',    // For TF.js
+    'doctr',         // For docTR-TFJS
     'jsdelivr'       // Catch‑all for other CDN assets
 ];
 
