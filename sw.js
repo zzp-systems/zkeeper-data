@@ -1,5 +1,5 @@
 // sw.js - Z-Keeper Service Worker
-const CACHE_VERSION = 'zkeeper-ocr-v3';
+const CACHE_VERSION = 'zkeeper-ocr-v3'; // 🔄 Bumped version
 const CACHE_NAME = `zkeeper-${CACHE_VERSION}`;
 
 // App shell assets - cached on install
@@ -11,12 +11,15 @@ const APP_SHELL = [
     './icon-512.png'
 ];
 
-// Tesseract CDN paths (cached dynamically)
+// CDN patterns to be cached aggressively (cache-first)
 const OCR_PATTERNS = [
     'tesseract.js@5',
     'tesseract.js-core@5',
     'traineddata',
-    'projectnaptha'
+    'projectnaptha',
+    'tensorflow',    // ✅ Added for TF.js
+    'doctr',         // ✅ Added for docTR-TFJS
+    'jsdelivr'       // Catch‑all for other CDN assets
 ];
 
 // =============================================================
@@ -26,7 +29,6 @@ self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                // Cache the app shell
                 return cache.addAll(APP_SHELL);
             })
             .then(() => self.skipWaiting())
@@ -59,7 +61,7 @@ self.addEventListener('fetch', event => {
     const request = event.request;
 
     // ---------------------------------------------------------
-    // 1. TESSERACT & OCR ASSETS - Cache First, Network Fallback
+    // 1. OCR & CDN ASSETS - Cache First, Network Fallback
     // ---------------------------------------------------------
     if (isOcrAsset(url)) {
         event.respondWith(
@@ -87,7 +89,6 @@ self.addEventListener('fetch', event => {
         event.respondWith(
             fetch(request)
                 .then(response => {
-                    // Cache successful API responses
                     if (response && response.status === 200) {
                         const clone = response.clone();
                         caches.open(CACHE_NAME).then(cache => {
@@ -104,20 +105,18 @@ self.addEventListener('fetch', event => {
     }
 
     // ---------------------------------------------------------
-    // 3. APP SHELL & OTHER ASSETS - Cache First, Network Fallback
+    // 3. APP SHELL & OTHER ASSETS - Stale-While-Revalidate
     // ---------------------------------------------------------
     event.respondWith(
         caches.match(request)
             .then(cachedResponse => {
                 if (cachedResponse) {
-                    // Return cached, but update in background (stale-while-revalidate)
                     updateCacheInBackground(request);
                     return cachedResponse;
                 }
                 return fetchAndCache(request);
             })
             .catch(() => {
-                // If offline and not cached, return offline page
                 if (request.mode === 'navigate') {
                     return caches.match('./index.html');
                 }
@@ -130,25 +129,14 @@ self.addEventListener('fetch', event => {
 // HELPER FUNCTIONS
 // =============================================================
 
-/**
- * Check if URL is an OCR/Tesseract asset
- */
 function isOcrAsset(url) {
-    return OCR_PATTERNS.some(pattern => url.includes(pattern)) ||
-           url.includes('jsdelivr') ||
-           url.includes('tesseract');
+    return OCR_PATTERNS.some(pattern => url.includes(pattern));
 }
 
-/**
- * Check if URL is an API call (GitHub sync)
- */
 function isApiCall(url) {
     return url.includes('api.github.com') || url.includes('githubusercontent');
 }
 
-/**
- * Fetch and cache a request
- */
 function fetchAndCache(request) {
     return fetch(request)
         .then(networkResponse => {
@@ -162,9 +150,6 @@ function fetchAndCache(request) {
         });
 }
 
-/**
- * Background cache update (stale-while-revalidate)
- */
 function updateCacheInBackground(request) {
     fetch(request)
         .then(response => {
@@ -178,13 +163,12 @@ function updateCacheInBackground(request) {
 }
 
 // =============================================================
-// MESSAGE HANDLER (for client communication)
+// MESSAGE HANDLER
 // =============================================================
 self.addEventListener('message', event => {
     if (event.data && event.data.action === 'skipWaiting') {
         self.skipWaiting();
     }
-
     if (event.data && event.data.action === 'clearCache') {
         caches.keys().then(keys => {
             keys.forEach(key => {
@@ -194,8 +178,6 @@ self.addEventListener('message', event => {
             });
         });
     }
-
-    // Respond with current cache status
     if (event.data && event.data.action === 'getStatus') {
         caches.keys().then(keys => {
             event.ports[0].postMessage({
